@@ -2,6 +2,73 @@
 
 ## Current Session Progress
 
+### Date: Session 35 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 35 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #25: Verify tab is default landing view** ✅ PASSING
+   - Navigated to http://localhost:3000
+   - Automatically redirected to /verify
+   - NPI input form visible with placeholder "1003127655"
+   - All 5 pipeline steps visible in tracker
+   - Verify tab highlighted in navigation
+
+2. **Feature #91: Full pipeline completes in mock mode** ✅ PASSING
+   - Entered NPI 1003127655
+   - All 5 pipeline steps completed with checkmarks
+   - Status: VERIFIED with 97% confidence
+   - Provider: ABOSHADY, MOUSTAFA MOATAZ (M.D.)
+   - License: A128437, Current/Active, expires 2026-03-31
+   - Specialty: Hospitalist
+   - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 2ms, llm_ms: 201ms
+
+3. **Feature #74: Physicians process sequentially** ✅ PASSING
+   - Entered 3 NPIs: 1003127655, 1234567890, 5555555555
+   - Progress indicator showed "Processing 1 of 3..."
+   - Button disabled during processing ("Processing...")
+   - All rows initially showed "queued" status
+   - Final results:
+     - 1003127655 (ABOSHADY) - verified 97%
+     - 1234567890 (CLEANDOC) - verified 97%
+     - 5555555555 (EXCLUDED) - failed 0% (LEIE exclusion)
+   - "3 / 3 completed" indicator displayed
+   - "Export CSV" link active
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 59 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 199 (increased by 4 from session 34's 195)
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 202ms total pipeline
+  - Failure Rate: 1.2% overall
+  - Outcome Distribution: Verified 74 (37.2%), Flagged 36 (18.1%), Failed 30 (15.1%), Escalated 59 (29.6%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 200ms
+  - Failure Rates: NPI 0%, DCA 3.5%, LEIE 0%
+- Console errors: 1 (favicon 404 which is cosmetic only)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 199 verification records
+- Console errors: 0 functional errors
+
+#### Screenshots Captured:
+- regression-session35-batch-complete.png - Batch results with 3 completed verifications
+- regression-session35-dashboard.png - Dashboard with 199 total verifications
+- regression-session35-hitl-queue.png - HITL Queue showing 59 pending reviews
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 34 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
