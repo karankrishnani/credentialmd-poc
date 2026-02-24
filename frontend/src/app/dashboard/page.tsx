@@ -1,9 +1,32 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+} from 'recharts';
 
 // API base URL - configurable for development
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+interface CostDataPoint {
+  timestamp: string;
+  cost: number;
+}
+
+interface RetryStatistics {
+  npi_retry_rate: number;
+  dca_retry_rate: number;
+  total_with_retries: number;
+}
 
 interface MetricsData {
   total_verifications: number;
@@ -25,6 +48,8 @@ interface MetricsData {
     failed: number;
     escalated: number;
   };
+  cost_over_time?: CostDataPoint[];
+  retry_statistics?: RetryStatistics;
 }
 
 export default function DashboardPage() {
@@ -50,9 +75,57 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchMetrics();
-    // Refresh every 30 seconds
+
+    // Subscribe to metrics SSE stream for real-time updates
+    let eventSource: EventSource | null = null;
+
+    const connectSSE = () => {
+      eventSource = new EventSource(`${API_BASE_URL}/api/metrics/stream`);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const eventData = JSON.parse(event.data);
+          if (eventData.event === 'metrics') {
+            setMetrics(eventData.data);
+            setError('');
+            setIsLoading(false);
+          } else if (eventData.event === 'close') {
+            // Reconnect after idle timeout
+            eventSource?.close();
+            setTimeout(connectSSE, 5000);
+          }
+        } catch (err) {
+          // Ignore parse errors
+        }
+      };
+
+      eventSource.addEventListener('metrics', (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          setMetrics(data);
+          setError('');
+          setIsLoading(false);
+        } catch (err) {
+          // Ignore parse errors
+        }
+      });
+
+      eventSource.onerror = () => {
+        eventSource?.close();
+        // Reconnect after 5 seconds on error
+        setTimeout(connectSSE, 5000);
+      };
+    };
+
+    connectSSE();
+
+    // Fallback: refresh every 30 seconds
     const interval = setInterval(fetchMetrics, 30000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      eventSource?.close();
+    };
   }, [fetchMetrics]);
 
   // Calculate total latency
@@ -200,15 +273,125 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Failure Rates Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h3 className="text-lg font-medium text-slate-800 mb-4">
+          Failure Rates by Source
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {isLoading ? (
+            <div className="col-span-3 flex items-center justify-center text-slate-400 py-8">
+              Loading...
+            </div>
+          ) : metrics ? (
+            <>
+              <div className="bg-red-50 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-600">NPI Registry</span>
+                  <span className="text-lg font-semibold text-red-600">
+                    {(metrics.failure_rates.npi * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 bg-red-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-red-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(metrics.failure_rates.npi * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="bg-orange-50 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-600">DCA Board</span>
+                  <span className="text-lg font-semibold text-orange-600">
+                    {(metrics.failure_rates.dca * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 bg-orange-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-orange-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(metrics.failure_rates.dca * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="bg-amber-50 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-600">LEIE Check</span>
+                  <span className="text-lg font-semibold text-amber-600">
+                    {(metrics.failure_rates.leie * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-2 h-2 bg-amber-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(metrics.failure_rates.leie * 100, 100)}%` }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="col-span-3 flex items-center justify-center text-slate-400 py-8">
+              No data yet
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Charts Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-medium text-slate-800 mb-4">
             Cost Over Time
           </h3>
-          <div className="h-64 flex items-center justify-center text-slate-400">
-            {/* Placeholder for Recharts LineChart */}
-            <p>Coming soon</p>
+          <div className="h-64">
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading...
+              </div>
+            ) : metrics?.cost_over_time && metrics.cost_over_time.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={metrics.cost_over_time.map((point, index) => ({
+                    ...point,
+                    index: index + 1,
+                  }))}
+                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="index"
+                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis
+                    tickFormatter={(value) => `$${value.toFixed(2)}`}
+                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [`$${value.toFixed(4)}`, 'Cost']}
+                    labelFormatter={(label) => `Verification #${label}`}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="cost"
+                    stroke="#2563eb"
+                    strokeWidth={2}
+                    dot={{ fill: '#2563eb', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, fill: '#1d4ed8' }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                No cost data yet
+              </div>
+            )}
           </div>
         </div>
 
@@ -216,9 +399,52 @@ export default function DashboardPage() {
           <h3 className="text-lg font-medium text-slate-800 mb-4">
             Retry Statistics
           </h3>
-          <div className="h-64 flex items-center justify-center text-slate-400">
-            {/* Placeholder for Recharts BarChart */}
-            <p>Coming soon</p>
+          <div className="h-64">
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading...
+              </div>
+            ) : metrics?.retry_statistics ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={[
+                    { source: 'NPI', rate: metrics.retry_statistics.npi_retry_rate * 100 },
+                    { source: 'DCA', rate: metrics.retry_statistics.dca_retry_rate * 100 },
+                  ]}
+                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="source"
+                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                  />
+                  <YAxis
+                    tickFormatter={(value) => `${value.toFixed(0)}%`}
+                    tick={{ fontSize: 12, fill: '#64748b' }}
+                    axisLine={{ stroke: '#cbd5e1' }}
+                    domain={[0, 100]}
+                  />
+                  <Tooltip
+                    formatter={(value: number) => [`${value.toFixed(1)}%`, 'Retry Rate']}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="rate" radius={[4, 4, 0, 0]}>
+                    <Cell fill="#3b82f6" />
+                    <Cell fill="#22c55e" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                No retry data yet
+              </div>
+            )}
           </div>
         </div>
       </div>

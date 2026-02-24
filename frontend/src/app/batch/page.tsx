@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 
 // API base URL - configurable for development
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface BatchResult {
   npi_number: string;
@@ -142,7 +142,7 @@ export default function BatchPage() {
       const data = await response.json();
       const batchId = data.batch_id;
 
-      // Initialize batch status
+      // Initialize batch status with queued status for all NPIs
       setBatchStatus({
         batch_id: batchId,
         total: npiList.length,
@@ -151,7 +151,7 @@ export default function BatchPage() {
         results: npiList.map(npi => ({
           npi_number: npi,
           provider_name: null,
-          verification_status: 'pending',
+          verification_status: 'queued',
           confidence_score: null,
           discrepancies: [],
         })),
@@ -227,6 +227,7 @@ export default function BatchPage() {
         return 'bg-danger-100 text-danger-700 border-danger-200';
       case 'escalated':
         return 'bg-purple-100 text-purple-700 border-purple-200';
+      case 'queued':
       case 'pending':
         return 'bg-slate-100 text-slate-600 border-slate-200';
       default:
@@ -405,11 +406,17 @@ export default function BatchPage() {
           </h3>
           {batchStatus && (
             <div className="flex items-center gap-4">
-              <span className="text-sm text-slate-500">
-                {batchStatus.completed} / {batchStatus.total} completed
-              </span>
-              {batchStatus.status === 'processing' && (
-                <div className="w-4 h-4 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+              {batchStatus.status === 'processing' ? (
+                <>
+                  <span className="text-sm text-slate-500">
+                    Processing {batchStatus.completed + 1} of {batchStatus.total}...
+                  </span>
+                  <div className="w-4 h-4 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+                </>
+              ) : (
+                <span className="text-sm text-slate-500">
+                  {batchStatus.completed} / {batchStatus.total} completed
+                </span>
               )}
               {batchStatus.status === 'completed' && (
                 <a
@@ -452,7 +459,7 @@ export default function BatchPage() {
                       {result.npi_number}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-800">
-                      {result.provider_name || (result.verification_status === 'pending' ? '...' : 'Unknown')}
+                      {result.provider_name || (result.verification_status === 'queued' || result.verification_status === 'pending' ? '...' : 'Unknown')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getStatusColor(result.verification_status)}`}>

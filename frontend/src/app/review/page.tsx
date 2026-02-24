@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 // API base URL - configurable for development
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface HITLItem {
   id: string;

@@ -26,17 +26,17 @@ MOCK_RESPONSES: Dict[str, Dict[str, Any]] = {
                      "federal healthcare programs."
     },
 
-    # License Revoked - critical finding
+    # License Revoked - critical finding but flagged (not escalated)
     "license_revoked": {
         "discrepancies": [
             "State board shows license revoked but NPI shows active status",
             "License revocation indicates serious disciplinary action"
         ],
-        "confidence_score": 15,
+        "confidence_score": 72,
         "reasoning": "License revocation is a critical finding that indicates the physician "
                      "has had their medical license revoked by the state board. Despite the "
                      "NPI record showing active enumeration status, this physician cannot "
-                     "legally practice medicine. Verification fails due to revoked license."
+                     "legally practice medicine. Flagged for review due to revoked license."
     },
 
     # License Surrendered
@@ -52,31 +52,30 @@ MOCK_RESPONSES: Dict[str, Dict[str, Any]] = {
                      "medicine in this state."
     },
 
-    # License Delinquent - concerning but not critical
+    # License Delinquent - concerning but flagged for review
     "license_delinquent": {
         "discrepancies": [
             "License renewal is delinquent, may indicate lapsed credentials",
             "Expiration date has passed without renewal"
         ],
-        "confidence_score": 55,
+        "confidence_score": 75,
         "reasoning": "Delinquent license status suggests the physician has not completed "
                      "the renewal process. While this may be an administrative oversight, "
-                     "practicing with a delinquent license is prohibited. The physician "
-                     "should complete renewal before verification can be approved."
+                     "practicing with a delinquent license is prohibited. Flagged for "
+                     "review - physician should complete renewal before approval."
     },
 
-    # Source Unavailable - degraded confidence
+    # Source Unavailable - degraded confidence but flagged (not escalated)
     "source_unavailable": {
         "discrepancies": [
             "DCA source was unavailable, license status could not be verified",
             "Verification proceeded with incomplete data"
         ],
-        "confidence_score": 55,
+        "confidence_score": 73,
         "reasoning": "Unable to verify license status from the California DCA due to "
                      "source unavailability (likely CAPTCHA challenge). NPI record shows "
-                     "active status and no LEIE exclusion was found. However, without DCA "
-                     "confirmation, verification confidence is reduced. Human review "
-                     "recommended to manually verify license status."
+                     "active status and no LEIE exclusion was found. Without DCA "
+                     "confirmation, verification is flagged for manual review."
     },
 
     # Name Mismatch - moderate concern
@@ -107,7 +106,7 @@ MOCK_RESPONSES: Dict[str, Dict[str, Any]] = {
                      "non-primary designation."
     },
 
-    # Probation Status - concerning
+    # Probation Status - concerning, escalates to HITL
     "probation": {
         "discrepancies": [
             "License shows secondary status of Probation",

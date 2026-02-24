@@ -323,6 +323,56 @@ def get_metrics() -> Dict[str, Any]:
     ).fetchall()
     outcome_dist = {row[0]: row[1] for row in outcomes}
 
+    # Cost over time (last 20 verifications with cost data)
+    cost_over_time = conn.execute(
+        """
+        SELECT created_at, cost_usd
+        FROM verification_log
+        WHERE cost_usd IS NOT NULL AND cost_usd > 0
+        ORDER BY created_at DESC
+        LIMIT 20
+        """
+    ).fetchall()
+    # Reverse to get chronological order
+    cost_over_time_data = [
+        {"timestamp": row[0].isoformat() if hasattr(row[0], 'isoformat') else str(row[0]), "cost": round(row[1], 4)}
+        for row in reversed(cost_over_time)
+    ]
+
+    # Retry statistics
+    retry_stats = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN JSON_EXTRACT(retry_counts, '$.npi') > 0 THEN 1 ELSE 0 END) as npi_retries,
+            SUM(CASE WHEN JSON_EXTRACT(retry_counts, '$.dca') > 0 THEN 1 ELSE 0 END) as dca_retries,
+            COUNT(*) as total
+        FROM verification_log
+        WHERE retry_counts IS NOT NULL
+        """
+    ).fetchone()
+    npi_retry_rate = (retry_stats[0] or 0) / max(retry_stats[2] or 1, 1)
+    dca_retry_rate = (retry_stats[1] or 0) / max(retry_stats[2] or 1, 1)
+
+    # Calculate failure rates from source_available field
+    # source_available is a JSON object with keys: npi, dca, leie
+    # A source "failed" if its value is false
+    failure_stats = conn.execute(
+        """
+        SELECT
+            SUM(CASE WHEN JSON_EXTRACT(source_available, '$.npi') = false THEN 1 ELSE 0 END) as npi_failures,
+            SUM(CASE WHEN JSON_EXTRACT(source_available, '$.dca') = false THEN 1 ELSE 0 END) as dca_failures,
+            SUM(CASE WHEN JSON_EXTRACT(source_available, '$.leie') = false THEN 1 ELSE 0 END) as leie_failures,
+            COUNT(*) as total
+        FROM verification_log
+        WHERE source_available IS NOT NULL
+        """
+    ).fetchone()
+
+    failure_total = failure_stats[3] or 1  # Avoid division by zero
+    npi_failure_rate = (failure_stats[0] or 0) / failure_total
+    dca_failure_rate = (failure_stats[1] or 0) / failure_total
+    leie_failure_rate = (failure_stats[2] or 0) / failure_total
+
     return {
         "total_verifications": total,
         "avg_cost_usd": round(avg_cost, 4),
@@ -333,15 +383,21 @@ def get_metrics() -> Dict[str, Any]:
             "llm": int(avg_llm)
         },
         "failure_rates": {
-            "npi": 0.0,  # TODO: Calculate from errors
-            "dca": 0.0,
-            "leie": 0.0
+            "npi": round(npi_failure_rate, 4),
+            "dca": round(dca_failure_rate, 4),
+            "leie": round(leie_failure_rate, 4)
         },
         "outcome_distribution": {
             "verified": outcome_dist.get("verified", 0),
             "flagged": outcome_dist.get("flagged", 0),
             "failed": outcome_dist.get("failed", 0),
             "escalated": outcome_dist.get("escalated", 0)
+        },
+        "cost_over_time": cost_over_time_data,
+        "retry_statistics": {
+            "npi_retry_rate": round(npi_retry_rate, 3),
+            "dca_retry_rate": round(dca_retry_rate, 3),
+            "total_with_retries": (retry_stats[0] or 0) + (retry_stats[1] or 0)
         }
     }
 

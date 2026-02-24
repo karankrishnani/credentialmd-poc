@@ -530,6 +530,58 @@ async def get_metrics():
     return db.get_metrics()
 
 
+@router.get("/metrics/stream")
+async def stream_metrics():
+    """
+    Stream metrics updates via SSE.
+
+    Pushes updated metrics every 2 seconds while any batch is processing,
+    or every 10 seconds when idle. This allows the dashboard to show
+    real-time updates during batch processing.
+    """
+    async def event_generator():
+        last_metrics = None
+        idle_count = 0
+        max_idle = 30  # Stop after 5 minutes of idle (30 * 10 seconds)
+
+        while True:
+            # Check if any batch is processing
+            any_processing = any(
+                batch.get("status") == "processing"
+                for batch in _batches.values()
+            )
+
+            # Get current metrics
+            current_metrics = db.get_metrics()
+
+            # Only send if metrics changed or first time
+            if current_metrics != last_metrics:
+                yield {
+                    "event": "metrics",
+                    "data": current_metrics,
+                }
+                last_metrics = current_metrics
+                idle_count = 0
+            else:
+                idle_count += 1
+
+            # Stop if idle for too long
+            if idle_count >= max_idle:
+                yield {
+                    "event": "close",
+                    "data": {"reason": "idle_timeout"},
+                }
+                break
+
+            # Poll faster during batch processing, slower when idle
+            if any_processing:
+                await asyncio.sleep(2)
+            else:
+                await asyncio.sleep(10)
+
+    return EventSourceResponse(event_generator())
+
+
 # =============================================================================
 # HITL Queue Endpoint
 # =============================================================================
