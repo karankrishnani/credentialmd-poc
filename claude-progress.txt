@@ -2,6 +2,63 @@
 
 ## Current Session Progress
 
+### Date: Session 14 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 14 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #66: POST /api/verify returns verification_id immediately** ✅ PASSING
+   - Called POST /api/verify with NPI 1003127655
+   - Response arrived immediately with verification_id and status: "processing"
+   - Verified GET /api/verify/{id} returns full verification result after completion
+   - Result: VERIFIED with 97% confidence, all step latencies recorded
+
+2. **Feature #99: Needs Review banner on escalated verification** ✅ PASSING
+   - Ran verification for NPI 1111111111 (GHOSTDOC, MICHAEL)
+   - Pipeline completed with ESCALATED status
+   - "Human Review Required" banner appears with icon
+   - Banner shows reason: "No CA license in NPI"
+   - All pipeline steps show green checkmarks despite escalation
+
+3. **Feature #60: CSV missing required columns shows error** ✅ PASSING
+   - Navigated to Batch tab
+   - Uploaded test_no_npi_column.csv (CSV without 'npi' column)
+   - Clear error message displayed in red: "CSV must have an 'npi' column"
+   - Batch processing did not start
+   - Run Batch button remained disabled
+
+#### Additional Verification:
+- Dashboard showing 142 total verifications with real metrics
+- Avg Cost: $0.02, Avg Latency: 201ms, Failure Rate: 0.9%
+- Outcome Distribution: Verified 53 (37.3%), Flagged 27 (19.0%), Failed 20 (14.1%), Escalated 42 (29.6%)
+- Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 199ms
+- HITL Queue showing 42 verifications pending review
+- API metrics endpoint verified via curl
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 142 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session14-escalated.png - Pipeline steps for escalated verification
+- regression-session14-escalated-result.png - Human Review Required banner
+- regression-session14-csv-error.png - CSV missing npi column error message
+- regression-session14-dashboard.png - Dashboard with updated metrics (142 verifications)
+- regression-session14-hitl-queue.png - HITL Queue showing 42 pending reviews
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 13 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
