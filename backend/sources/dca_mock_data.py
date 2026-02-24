@@ -156,6 +156,92 @@ MOCK_DCA_RESPONSES: Dict[str, Optional[Dict[str, Any]]] = {
         "has_disciplinary_action": False,
         "has_public_documents": False
     },
+
+    # JOHN CLEANDOC - clean, active (NPI 1234567890)
+    "G999999": {
+        "license_type": "Physician and Surgeon A",
+        "license_number": "G 999999",
+        "license_status": "Current/Active",
+        "expiration_date": "2027-03-31",
+        "secondary_status": None,
+        "name": "CLEANDOC, JOHN P",
+        "city": "LOS ANGELES",
+        "state": "California",
+        "county": "LOS ANGELES",
+        "zip": "90017",
+        "detail_url": "/details/8002/G/999999/mock-hash",
+        "has_disciplinary_action": False,
+        "has_public_documents": False
+    },
+
+    # DOCTOR EXCLUDED - clean DCA but LEIE excluded (NPI 5555555555)
+    "D555555": {
+        "license_type": "Physician and Surgeon A",
+        "license_number": "D 555555",
+        "license_status": "Current/Active",
+        "expiration_date": "2027-01-15",
+        "secondary_status": None,
+        "name": "EXCLUDED, DOCTOR E",
+        "city": "LOS ANGELES",
+        "state": "California",
+        "county": "LOS ANGELES",
+        "zip": "90001",
+        "detail_url": "/details/8002/D/555555/mock-hash",
+        "has_disciplinary_action": False,
+        "has_public_documents": False
+    },
+
+    # CRISELDA ABAD-SANTOS - License Revoked (NPI 6666666666)
+    "A666666": {
+        "license_type": "Physician and Surgeon A",
+        "license_number": "A 666666",
+        "license_status": "License Revoked",
+        "expiration_date": "N/A",
+        "secondary_status": "Probation Completed",
+        "name": "ABAD-SANTOS, CRISELDA CALAYAN",
+        "city": "SAN FRANCISCO",
+        "state": "California",
+        "county": "SAN FRANCISCO",
+        "zip": "94102",
+        "detail_url": "/details/8002/A/666666/mock-hash",
+        "has_disciplinary_action": True,
+        "has_public_documents": True
+    },
+
+    # ALICE JONES - License Delinquent (NPI 9999999999)
+    "C999999": {
+        "license_type": "Physician and Surgeon A",
+        "license_number": "C 999999",
+        "license_status": "Delinquent",
+        "expiration_date": "2025-03-31",
+        "secondary_status": None,
+        "name": "JONES, ALICE MARIE",
+        "city": "SACRAMENTO",
+        "state": "California",
+        "county": "SACRAMENTO",
+        "zip": "95814",
+        "detail_url": "/details/8002/C/999999/mock-hash",
+        "has_disciplinary_action": False,
+        "has_public_documents": False
+    },
+
+    # MARIA NOPI-EXCLUD - clean DCA but LEIE excluded via name lookup (NPI 1234560001)
+    # This tests the LEIE name+state fallback lookup since her LEIE record has no NPI
+    "M123456": {
+        "license_type": "Physician and Surgeon A",
+        "license_number": "M 123456",
+        "license_status": "Current/Active",
+        "expiration_date": "2027-05-15",
+        "secondary_status": None,
+        "name": "NOPI-EXCLUD, MARIA",
+        "city": "SAN FRANCISCO",
+        "state": "California",
+        "county": "SAN FRANCISCO",
+        "zip": "94102",
+        "detail_url": "/details/8002/M/123456/mock-hash",
+        "has_disciplinary_action": False,
+        "has_public_documents": False
+    },
 }
 
 # Special case: license that triggers DCA source unavailable

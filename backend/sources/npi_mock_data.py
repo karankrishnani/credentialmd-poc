@@ -511,10 +511,308 @@ MOCK_NPI_RESPONSES: Dict[str, Dict[str, Any]] = {
         "results": []
     },
 
-    # Another NPI NOT FOUND case for testing
+    # CLEAN VERIFICATION - second test case
+    "1234567890": {
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1388534400000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1704067200000",
+            "number": "1234567890",
+            "addresses": [
+                {
+                    "address_1": "1000 WILSHIRE BLVD",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "LOS ANGELES",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "90017",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2014-01-01",
+                "first_name": "JOHN",
+                "last_name": "CLEANDOC",
+                "last_updated": "2024-01-01",
+                "middle_name": "P",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "M",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207Q00000X",
+                    "desc": "Family Medicine",
+                    "license": "G999999",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
+    },
+
+    # LEIE EXCLUDED - has valid CA license but NPI is in LEIE database
+    "5555555555": {
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1262304000000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1577836800000",
+            "number": "5555555555",
+            "addresses": [
+                {
+                    "address_1": "123 MAIN ST",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "LOS ANGELES",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "90001",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2010-01-01",
+                "first_name": "DOCTOR",
+                "last_name": "EXCLUDED",
+                "last_updated": "2020-01-01",
+                "middle_name": "E",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "M",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207R00000X",
+                    "desc": "Internal Medicine",
+                    "license": "D555555",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
+    },
+
+    # LICENSE REVOKED - CA license maps to DCA revoked status
+    "6666666666": {
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1325376000000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1609459200000",
+            "number": "6666666666",
+            "addresses": [
+                {
+                    "address_1": "500 REVOKED BLVD",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "SAN FRANCISCO",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "94102",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2012-01-01",
+                "first_name": "CRISELDA",
+                "last_name": "ABAD-SANTOS",
+                "last_updated": "2021-01-01",
+                "middle_name": "CALAYAN",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "F",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207R00000X",
+                    "desc": "Internal Medicine",
+                    "license": "A666666",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
+    },
+
+    # DCA SOURCE UNAVAILABLE - license triggers SourceUnavailableError from DCA mock
+    "7777777777": {
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1388534400000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1672531200000",
+            "number": "7777777777",
+            "addresses": [
+                {
+                    "address_1": "777 UNAVAILABLE ST",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "OAKLAND",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "94612",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2014-01-01",
+                "first_name": "UNAVAILABLE",
+                "last_name": "DCADOC",
+                "last_updated": "2023-01-01",
+                "middle_name": "",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "M",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207R00000X",
+                    "desc": "Internal Medicine",
+                    "license": "B777777",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
+    },
+
+    # MARIA NOPI-EXCLUD - LEIE excluded but has NO NPI in LEIE record
+    # This tests the name+state fallback lookup in LEIE
+    # LEIE record: NOPI-EXCLUD,MARIA,,,INDIVIDUAL,PHYSICIAN,,,19680922,...,CA,...
+    # The NPI field in LEIE is blank, so lookup by NPI won't match,
+    # but lookup by name+state should match
+    "1234560001": {
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1325376000000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1672531200000",
+            "number": "1234560001",
+            "addresses": [
+                {
+                    "address_1": "300 ELM BLVD",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "SAN FRANCISCO",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "94102",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2012-01-01",
+                "first_name": "MARIA",
+                "last_name": "NOPI-EXCLUD",
+                "last_updated": "2023-01-01",
+                "middle_name": "",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "F",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207R00000X",
+                    "desc": "Internal Medicine",
+                    "license": "M123456",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
+    },
+
+    # LICENSE DELINQUENT - CA license maps to DCA delinquent status
     "9999999999": {
-        "result_count": 0,
-        "results": []
+        "result_count": 1,
+        "results": [{
+            "created_epoch": "1420070400000",
+            "enumeration_type": "NPI-1",
+            "last_updated_epoch": "1704067200000",
+            "number": "9999999999",
+            "addresses": [
+                {
+                    "address_1": "999 DELINQUENT DR",
+                    "address_purpose": "LOCATION",
+                    "address_type": "DOM",
+                    "city": "SACRAMENTO",
+                    "country_code": "US",
+                    "country_name": "United States",
+                    "postal_code": "95814",
+                    "state": "CA"
+                }
+            ],
+            "basic": {
+                "credential": "M.D.",
+                "enumeration_date": "2015-01-01",
+                "first_name": "ALICE",
+                "last_name": "JONES",
+                "last_updated": "2024-01-01",
+                "middle_name": "MARIE",
+                "name_prefix": "--",
+                "name_suffix": "--",
+                "sex": "F",
+                "sole_proprietor": "NO",
+                "status": "A"
+            },
+            "endpoints": [],
+            "identifiers": [],
+            "other_names": [],
+            "practiceLocations": [],
+            "taxonomies": [
+                {
+                    "code": "207Q00000X",
+                    "desc": "Family Medicine",
+                    "license": "C999999",
+                    "primary": True,
+                    "state": "CA",
+                    "taxonomy_group": ""
+                }
+            ]
+        }]
     },
 }
 
