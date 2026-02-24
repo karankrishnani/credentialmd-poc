@@ -2,6 +2,60 @@
 
 ## Current Session Progress
 
+### Date: Session 17 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 17 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #29: Non-existent route shows 404** ✅ PASSING
+   - Navigated to http://localhost:3000/nonexistent-route
+   - 404 page displayed correctly with "Page Not Found" message
+   - "Go to Verify" link works and navigates to valid page
+   - App does not crash, navigation continues to work
+
+2. **Feature #16: Route decision maps low score to human review** ✅ PASSING
+   - Entered NPI 4444444444 (LOWCONFIDENCE, ANNA M)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: ESCALATED status
+   - Confidence score: 60% (< 70 threshold triggers escalation)
+   - "Human Review Required" banner with reason: "Low confidence score (60)"
+   - Discrepancies: "License shows secondary status of Probation"
+   - Physician appears in HITL Queue with all details and action buttons
+
+3. **Feature #43: Empty state / Dashboard with data** ✅ PASSING
+   - Dashboard displays real metrics from 148 verifications
+   - Total Verifications: 148
+   - Avg Cost: $0.02 per verification
+   - Avg Latency: 202ms total pipeline
+   - Failure Rate: 0.9% overall
+   - Outcome Distribution: Verified 54 (36.5%), Flagged 29 (19.6%), Failed 21 (14.2%), Escalated 44 (29.7%)
+   - Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 200ms
+   - Cost Over Time and Retry Statistics charts rendering correctly
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 44 verifications pending review
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅ (restarted during session)
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 148 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session17-dashboard.png - Dashboard with updated metrics (148 verifications)
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 16 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
