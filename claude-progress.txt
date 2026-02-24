@@ -2,6 +2,86 @@
 
 ## Current Session Progress
 
+### Date: Session 43 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 43 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #22: Finalize node persists to DuckDB** ✅ PASSING
+   - Navigated to Verify tab
+   - Entered NPI 1003127655 (ABOSHADY, MOUSTAFA MOATAZ)
+   - Clicked Verify button
+   - All 5 pipeline steps completed with green checkmarks
+   - Final result: VERIFIED with 97% confidence
+   - Processing times: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 2ms, llm_ms: 297ms
+   - Verified API returns full verification data via GET /api/verify/{id}
+   - Verified metrics endpoint shows 221 total verifications (increased from 220)
+   - Verified cost_over_time includes the new verification timestamp
+   - Screenshot: regression-session43-feature22-verified.png
+
+2. **Feature #46: Low confidence triggers HITL escalation** ✅ PASSING
+   - Entered NPI 4444444444 (LOWCONFIDENCE, ANNA M)
+   - All 5 pipeline steps completed with green checkmarks
+   - Status: **ESCALATED** ✅
+   - Confidence Score: **60%** (which is < 70 threshold) ✅
+   - Human Review Required banner displayed: "Reason: Low confidence score (60)" ✅
+   - Discrepancies Found:
+     - "License shows secondary status of Probation"
+     - "Physician may have disciplinary action on record"
+   - Navigated to HITL Queue
+   - Queue shows 61 verifications pending review (increased from 60)
+   - Verified NPI 4444444444 appears in queue via API with needs_human_review=true
+   - Screenshots: regression-session43-feature46-escalated.png, regression-session43-feature46-hitl-queue.png
+
+3. **Feature #59: Non-CSV file upload shows error** ✅ PASSING
+   - Navigated to Batch tab
+   - Clicked "Select File" button
+   - Uploaded test_invalid.txt (non-CSV file)
+   - Red error banner displayed: **"CSV must have an 'npi' column"** ✅
+   - Batch processing did NOT start (Run Batch button still disabled) ✅
+   - Screenshot: regression-session43-feature59-csv-error.png
+
+#### Dashboard Verification:
+- Total Verifications: 221 (increased from 219 after testing)
+- Avg Cost: $0.02 per verification
+- Avg Latency: 204ms total pipeline
+- Failure Rate: 1.1%
+- Outcome Distribution: Verified 86 (38.9%), Flagged 39 (17.6%), Failed 35 (15.8%), Escalated 61 (27.6%)
+- Charts rendering correctly (Latency by Source, Outcome Distribution, Cost Over Time, Retry Statistics)
+
+#### HITL Queue Verification:
+- 61 verifications pending review
+- Cards display correctly with:
+  - NPI number, Provider name
+  - Reason for Escalation (e.g., "NPI not found", "Low confidence score")
+  - Collected Evidence (Status, LEIE Match)
+  - External links (NPI Registry, CA DCA, LEIE List)
+  - Review Notes textarea
+  - Approve, Reject, Request Info buttons
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: 221 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session43-feature22-verified.png - Pipeline tracker with all steps complete
+- regression-session43-feature46-escalated.png - Escalated verification with low confidence
+- regression-session43-feature46-hitl-queue.png - HITL review queue with 61 pending
+- regression-session43-feature59-csv-error.png - Non-CSV file upload error message
+- regression-session43-dashboard.png - Dashboard with metrics and charts
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 42 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
