@@ -158,8 +158,8 @@ source .venv/bin/activate
 
 # Run init_db.py if it exists
 if [ -f "scripts/init_db.py" ]; then
-    python scripts/init_db.py --test > /dev/null 2>&1
-    echo -e "  ${GREEN}Database initialized with test data${NC}"
+    python scripts/init_db.py --csv ../data/oig/UPDATED.csv > /dev/null 2>&1
+    echo -e "  ${GREEN}Database initialized with LEIE data${NC}"
 else
     echo -e "  ${YELLOW}Skipping database init (script not yet created)${NC}"
 fi

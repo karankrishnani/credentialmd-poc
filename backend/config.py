@@ -4,6 +4,7 @@ EverCred POC Configuration
 Loads configuration from environment variables with sensible defaults.
 """
 
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -14,6 +15,10 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 # Mock Mode - default to True for development/testing
 MOCK_MODE = os.getenv("EVERCRED_MOCK_MODE", "true").lower() == "true"
+
+# Logging configuration
+LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
 
 # Backend server configuration
 BACKEND_HOST = os.getenv("BACKEND_HOST", "0.0.0.0")
@@ -29,7 +34,7 @@ DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", str(PROJECT_ROOT / "data" / "evercre
 if MOCK_MODE:
     DEFAULT_LEIE_PATH = str(PROJECT_ROOT / "data" / "UPDATED_test.csv")
 else:
-    DEFAULT_LEIE_PATH = str(PROJECT_ROOT / "data" / "UPDATED.csv")
+    DEFAULT_LEIE_PATH = str(PROJECT_ROOT / "data" / "oig" / "UPDATED.csv")
 LEIE_CSV_PATH = Path(os.getenv("LEIE_CSV_PATH", DEFAULT_LEIE_PATH))
 
 # Target state for verification (CA for POC, but designed to be extensible)
@@ -70,6 +75,7 @@ def get_config_summary() -> dict:
     """Return a summary of current configuration for debugging."""
     return {
         "mock_mode": MOCK_MODE,
+        "log_level": LOG_LEVEL_NAME,
         "backend_host": BACKEND_HOST,
         "backend_port": BACKEND_PORT,
         "duckdb_path": str(DUCKDB_PATH),
