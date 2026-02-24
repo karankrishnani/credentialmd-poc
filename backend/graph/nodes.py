@@ -421,12 +421,18 @@ async def route_decision_node(state: VerificationState) -> Dict[str, Any]:
 
     if decision == "fail":
         updates["verification_status"] = "failed"
+        # Auto-fail cases skip the LLM — set confidence to 100 since
+        # LEIE exclusion and license revocation are deterministic failures
+        if state.get("confidence_score") is None:
+            updates["confidence_score"] = 100
         leie_record = state.get("leie_record")
         if leie_record:
+            updates["confidence_reasoning"] = "Automatic failure: OIG LEIE exclusion match"
             discrepancies = list(state.get("discrepancies", []))
             discrepancies.append(format_exclusion_reason(leie_record))
             updates["discrepancies"] = discrepancies
         elif (state.get("board_license_status") or "") == "License Revoked":
+            updates["confidence_reasoning"] = "Automatic failure: state board license revoked"
             discrepancies = list(state.get("discrepancies", []))
             discrepancies.append(
                 "AUTOMATIC FAIL: State board license status is 'License Revoked'. "

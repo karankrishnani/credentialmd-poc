@@ -6,7 +6,8 @@ Defines the verification workflow graph with nodes and edges.
 Graph structure:
 START -> npi_lookup -> {board_lookup, leie_lookup} (parallel)
                     -> human_review (if no license or NPI inactive)
-{board_lookup, leie_lookup} -> discrepancy_detection (fan-in)
+{board_lookup, leie_lookup} -> route_decision (if LEIE exclusion or license revoked — skips LLM)
+                            -> discrepancy_detection (normal path)
 discrepancy_detection -> route_decision
 route_decision -> finalize (auto-verify or auto-fail)
                -> human_review (low confidence or flagged)
@@ -68,8 +69,16 @@ def create_workflow_graph() -> StateGraph:
         }
     )
 
-    # After parallel lookups, go to discrepancy_detection
-    workflow.add_edge("parallel_lookups", "discrepancy_detection")
+    # After parallel lookups, check for auto-fail conditions (LEIE exclusion
+    # or license revoked) before spending time/cost on the LLM call
+    workflow.add_conditional_edges(
+        "parallel_lookups",
+        _should_proceed_after_lookups,
+        {
+            "auto_fail": "route_decision_node",
+            "proceed": "discrepancy_detection",
+        }
+    )
 
     # After discrepancy_detection, go to route_decision
     workflow.add_edge("discrepancy_detection", "route_decision_node")
@@ -164,6 +173,30 @@ def _should_proceed_after_npi(state: VerificationState) -> str:
         return "review"
 
     logger.info("[WORKFLOW] Post-NPI routing: proceed to parallel lookups")
+    return "proceed"
+
+
+def _should_proceed_after_lookups(state: VerificationState) -> str:
+    """
+    Determine whether to proceed to LLM discrepancy detection or short-circuit
+    to route_decision for automatic failures.
+
+    LEIE exclusion and license revocation are disqualifying conditions — no need
+    to spend time or cost on an LLM call when the outcome is certain.
+
+    Returns:
+        "auto_fail" or "proceed"
+    """
+    if state.get("leie_match", False):
+        logger.info("[WORKFLOW] Post-lookups routing: auto_fail (LEIE exclusion match)")
+        return "auto_fail"
+
+    board_status = state.get("board_license_status") or ""
+    if board_status == "License Revoked":
+        logger.info("[WORKFLOW] Post-lookups routing: auto_fail (license revoked)")
+        return "auto_fail"
+
+    logger.info("[WORKFLOW] Post-lookups routing: proceed to discrepancy detection")
     return "proceed"
 
 

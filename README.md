@@ -51,7 +51,8 @@ graph TD
     subgraph Backend ["Backend (FastAPI)"]
         subgraph Workflow ["LangGraph Workflow"]
             NPI["NPI Lookup"] --> ParallelLookups["Board Lookup<br/>LEIE Lookup"]
-            ParallelLookups --> Discrepancy["Discrepancy Detection<br/>(Claude)"]
+            ParallelLookups -->|"LEIE match or<br/>license revoked"| RouteDecision
+            ParallelLookups -->|"normal path"| Discrepancy["Discrepancy Detection<br/>(Claude)"]
             Discrepancy --> RouteDecision["Route Decision"]
             RouteDecision --> HumanReview["Human Review<br/>(LangGraph interrupt)"]
             RouteDecision --> Finalize["Finalize"]
@@ -81,11 +82,12 @@ flowchart TD
         LEIE["**LEIE Lookup**<br/>OIG Exclusion List<br/><i>DuckDB query</i>"]
     end
 
-    Parallel --> LLM["**Discrepancy Detection**<br/>Claude Opus<br/><i>Only LLM call in pipeline</i>"]
+    Parallel --> AutoFailCheck{"LEIE exclusion or<br/>license revoked?"}
+
+    AutoFailCheck -->|"Yes"| Fail["FAILED<br/><i>Confidence: 100%</i>"]
+    AutoFailCheck -->|"No"| LLM["**Discrepancy Detection**<br/>Claude Opus<br/><i>Only LLM call in pipeline</i>"]
 
     LLM --> Route{"**Route Decision**<br/><i>Rule-based</i>"}
-
-    Route -->|"LEIE match or<br/>license revoked"| Fail["FAILED"]
     Route -->|"Confidence >= 90<br/>no discrepancies"| Verify["VERIFIED"]
     Route -->|"Confidence >= 70"| Flag["FLAGGED"]
     Route -->|"Confidence < 70 or<br/>source unavailable"| HITL2["**HITL Review**<br/>LangGraph interrupt"]
@@ -101,7 +103,7 @@ flowchart TD
 
 ## Architecture Highlights
 
-**Single LLM call** — Only the discrepancy detection step calls Claude. NPI parsing, routing, and LEIE lookups are all rule-based or database queries, keeping cost low (~$0.01-0.03/verification).
+**Single LLM call (skipped for auto-fails)** — Only the discrepancy detection step calls Claude. NPI parsing, routing, and LEIE lookups are all rule-based or database queries, keeping cost low (~$0.01-0.03/verification). LEIE exclusion matches and revoked licenses short-circuit the pipeline entirely — they skip the LLM call and fail immediately with 100% confidence.
 
 **Three data sources, verified in parallel** — NPI Registry (REST API), CA DCA License Search (Playwright web scraper), OIG LEIE Exclusion List (DuckDB). Board + LEIE run concurrently via `asyncio.gather()`.
 
@@ -111,8 +113,8 @@ flowchart TD
 
 | Condition | Outcome |
 |---|---|
-| LEIE exclusion match | Auto-fail |
-| License revoked | Auto-fail |
+| LEIE exclusion match | Auto-fail (skips LLM, confidence 100%) |
+| License revoked | Auto-fail (skips LLM, confidence 100%) |
 | Confidence >= 90, no discrepancies | Auto-verify |
 | Confidence >= 70 | Flag for review |
 | Confidence < 70 or source unavailable | Escalate to human |
