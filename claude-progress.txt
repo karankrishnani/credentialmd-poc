@@ -2,6 +2,63 @@
 
 ## Current Session Progress
 
+### Date: Session 16 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 16 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #25: Verify tab is default landing view** ✅ PASSING
+   - Navigated to http://localhost:3000
+   - Automatically redirected to /verify
+   - NPI input form visible with placeholder "1003127655"
+   - All 4 navigation tabs visible: Verify, Batch, Dashboard, HITL Queue
+   - Verification Pipeline shows 5 steps ready to process
+
+2. **Feature #47: Escalated physician appears in HITL Queue** ✅ PASSING
+   - Entered NPI 1111111111 (GHOSTDOC, MICHAEL)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: ESCALATED status
+   - "Human Review Required" banner with reason: "No CA license in NPI"
+   - Navigated to HITL Queue - physician card visible
+   - Card shows: NPI, escalation reason, collected evidence, external links, action buttons
+
+3. **Feature #38: Dashboard cost metric reflects LLM usage** ✅ PASSING
+   - Navigated to Dashboard tab
+   - Total Verifications: 147 (one more from this session's escalation test)
+   - Avg Cost: $0.02 per verification (reflects LLM usage)
+   - Avg Latency: 201ms total pipeline
+   - Failure Rate: 0.9% overall
+   - Outcome Distribution: Verified 54 (36.7%), Flagged 29 (19.7%), Failed 21 (14.3%), Escalated 43 (29.3%)
+   - Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 199ms
+   - Cost Over Time and Retry Statistics charts rendering correctly
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 43 verifications pending review
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 147 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session16-verify-landing.png - Verify tab as default landing view
+- regression-session16-escalated-result.png - Escalated verification result with pipeline
+- regression-session16-hitl-queue.png - HITL Queue showing 43 pending reviews
+- regression-session16-dashboard.png - Dashboard with metrics and charts
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 15 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
