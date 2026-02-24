@@ -2,6 +2,68 @@
 
 ## Current Session Progress
 
+### Date: Session 24 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 24 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #66: POST /api/verify returns verification_id immediately** ✅ PASSING
+   - Called POST /api/verify with NPI 1003127655
+   - Response arrived immediately with verification_id and status: "processing"
+   - Verified GET /api/verify/{id} returns full verification result after completion
+   - Result: VERIFIED with 97% confidence, all step latencies recorded
+   - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 1ms, llm_ms: 141ms
+
+2. **Feature #107: No horizontal scrollbar on standard viewports** ✅ PASSING
+   - Tested at 1920x1080 viewport → No horizontal scrollbar (scrollWidth = clientWidth = 1920)
+   - Tested at 1366x768 viewport → No horizontal scrollbar (scrollWidth = clientWidth = 1358)
+   - Tested at 768x1024 viewport → No horizontal scrollbar (scrollWidth = clientWidth = 768)
+   - All standard viewport sizes render correctly without horizontal overflow
+
+3. **Feature #49: HITL card provides source lookup links** ✅ PASSING
+   - Triggered escalation by verifying NPI 1111111111 (GHOSTDOC, MICHAEL)
+   - Verification completed with ESCALATED status and "No CA license in NPI"
+   - Navigated to HITL Queue tab (51 verifications pending review)
+   - Verified all three external links present on each card:
+     - "Look up on NPI Registry" → https://npiregistry.cms.hhs.gov/search?number={npi}
+     - "Search CA DCA" → https://search.dca.ca.gov/?BD=800
+     - "Check LEIE List" → https://oig.hhs.gov/exclusions/exclusions_list.asp
+   - All links are clickable with proper cursor styling
+   - Action buttons present: Approve, Reject, Request Info
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 51 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 166 (increased by 2 from this session's tests)
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 203ms total pipeline
+  - Failure Rate: 1.0% overall
+  - Outcome Distribution: Verified 61 (36.7%), Flagged 31 (18.7%), Failed 23 (13.9%), Escalated 51 (30.7%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 3ms, LLM 200ms
+  - Failure Rates: NPI 0%, DCA 3.0%, LEIE 0%
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 166 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session24-hitl-queue.png - HITL Queue showing 51 pending reviews with lookup links
+- regression-session24-dashboard.png - Dashboard with updated metrics (166 verifications)
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 23 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
