@@ -84,6 +84,17 @@ coverage.xml
 /test-results/
 /playwright-report/
 /playwright/.cache/
+.playwright-mcp/
+
+# Screenshots (development artifacts)
+*.png
+
+# Test files
+test_*.txt
+test_*.csv
+
+# Features database
+features.db
 
 # Misc
 *.bak
