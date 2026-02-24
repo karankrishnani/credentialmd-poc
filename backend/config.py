@@ -45,6 +45,9 @@ NPI_RATE_LIMIT_DELAY = 1.0  # seconds between requests for bulk operations
 DCA_SEARCH_URL = "https://search.dca.ca.gov/"
 DCA_BOARD_CODE = "800"  # Medical Board of California
 DCA_LICENSE_TYPE = "289"  # Physician's and Surgeon's
+DCA_HEADED = os.getenv("DCA_HEADED", "true").lower() == "true"
+DCA_CHROME_USER_DATA_DIR = os.getenv("DCA_CHROME_USER_DATA_DIR") or None
+DCA_MAX_RETRIES = int(os.getenv("DCA_MAX_RETRIES", "0"))
 
 # Retry configuration
 MAX_RETRIES = 4

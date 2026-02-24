@@ -8,11 +8,15 @@ Real DCA URL: https://search.dca.ca.gov/?BD=800
 """
 
 import asyncio
+import logging
 import time
+from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
-from config import MOCK_MODE, MAX_RETRIES, BASE_RETRY_DELAY
+from config import MOCK_MODE, BASE_RETRY_DELAY, DCA_HEADED, DCA_CHROME_USER_DATA_DIR, DCA_MAX_RETRIES
+
+logger = logging.getLogger(__name__)
 from sources.dca_mock_data import get_mock_dca_response, DCASourceUnavailableError
 
 
@@ -147,67 +151,113 @@ async def _playwright_lookup(license_number: str) -> DCALookupResult:
     result = DCALookupResult()
     retry_count = 0
 
-    for attempt in range(MAX_RETRIES + 1):
+    for attempt in range(DCA_MAX_RETRIES + 1):
         try:
-            # Import playwright here to avoid dependency issues in mock mode
             from playwright.async_api import async_playwright
+            from playwright_stealth import Stealth
 
-            async with async_playwright() as p:
-                # Launch browser - try headless first
-                browser = await p.chromium.launch(headless=True)
-
-                try:
+            stealth = Stealth()
+            async with stealth.use_async(async_playwright()) as p:
+                to_close = None
+                if DCA_CHROME_USER_DATA_DIR:
+                    user_data = str(Path(DCA_CHROME_USER_DATA_DIR).expanduser())
+                    try:
+                        logger.info(
+                            "DCA: Launching Chrome with persistent context (headed=%s, profile=%s)",
+                            DCA_HEADED,
+                            user_data,
+                        )
+                        context = await p.chromium.launch_persistent_context(
+                            user_data,
+                            headless=not DCA_HEADED,
+                            channel="chrome",
+                            args=["--disable-blink-features=AutomationControlled"],
+                            ignore_default_args=["--enable-automation"],
+                        )
+                        page = await context.new_page()
+                        to_close = context
+                    except Exception as profile_err:
+                        if "profile is already in use" in str(profile_err) or "ProcessSingleton" in str(profile_err):
+                            logger.warning(
+                                "DCA: Chrome profile in use, falling back to Chromium. Close Chrome to use your profile."
+                            )
+                        else:
+                            raise
+                if to_close is None:
+                    logger.info("DCA: Launching Chromium (headed=%s)", DCA_HEADED)
+                    browser = await p.chromium.launch(
+                        headless=not DCA_HEADED,
+                        args=["--disable-blink-features=AutomationControlled"],
+                        ignore_default_args=["--enable-automation"],
+                    )
                     context = await browser.new_context()
                     page = await context.new_page()
+                    to_close = browser
 
-                    # Navigate to DCA search
+                try:
+                    logger.info("DCA: Navigating to search.dca.ca.gov")
                     await page.goto("https://search.dca.ca.gov/?BD=800", timeout=30000)
 
-                    # Wait for the form to load
+                    logger.info("DCA: Waiting for form")
                     await page.wait_for_selector("#licenseNumber", timeout=10000)
 
-                    # Select Medical Board of California
+                    logger.info("DCA: Selecting board=16, licenseType=289")
                     await page.select_option("#boardCode", "16")
-
-                    # Select Physician's and Surgeon's license type
                     await page.select_option("#licenseType", "289")
 
-                    # Fill in license number
+                    logger.info("DCA: Filling license=%s", license_number)
                     await page.fill("#licenseNumber", license_number)
 
-                    # Wait for Turnstile CAPTCHA to auto-solve (if present)
-                    # This may not work if Turnstile detects automation
-                    await asyncio.sleep(2)  # Brief wait for Turnstile
+                    submit_btn = await page.query_selector("#srchSubmitHome")
+                    if submit_btn:
+                        disabled = await submit_btn.get_attribute("disabled")
+                        logger.info("DCA: Submit button state before wait: disabled=%s", disabled)
 
-                    # Click search
+                    logger.info("DCA: Waiting for Turnstile/CAPTCHA (max 30s)")
+                    try:
+                        await page.wait_for_selector("#srchSubmitHome:not([disabled])", timeout=30000)
+                    except Exception as wait_err:
+                        disabled = await page.evaluate(
+                            "() => document.querySelector('#srchSubmitHome')?.disabled ?? true"
+                        )
+                        logger.warning(
+                            "DCA: Submit button still disabled=%s after 30s. Turnstile may be blocking. %s",
+                            disabled,
+                            wait_err,
+                        )
+                        raise
+
+                    logger.info("DCA: Clicking search")
                     await page.click("#srchSubmitHome")
 
-                    # Wait for results
+                    logger.info("DCA: Waiting for results")
                     try:
                         await page.wait_for_selector("article.post", timeout=10000)
-                    except Exception:
-                        # No results found
+                    except Exception as e:
+                        logger.info("DCA: No results found or timeout: %s", e)
                         result.license_found = False
                         result.source_available = True
                         return result
 
-                    # Parse the first result
+                    logger.info("DCA: Parsing result")
                     article = await page.query_selector("article.post")
                     if article:
                         result = await _parse_dca_result(page, article)
 
-                    await browser.close()
+                    await to_close.close()
                     return result
 
                 except Exception as e:
-                    await browser.close()
+                    await to_close.close()
                     raise e
 
         except Exception as e:
-            if attempt < MAX_RETRIES:
+            logger.warning("DCA: Attempt %s failed: %s", attempt + 1, e)
+            if attempt < DCA_MAX_RETRIES:
                 retry_count += 1
-                delay = BASE_RETRY_DELAY * (2 ** attempt)  # 2s, 4s, 8s
-                print(f"DCA scraper error: {e}. Retry {attempt + 1}/{MAX_RETRIES} in {delay}s")
+                delay = BASE_RETRY_DELAY * (2 ** attempt)
+                logger.info("DCA: Retry %s/%s in %ss", attempt + 1, DCA_MAX_RETRIES, delay)
+                print(f"DCA scraper error: {e}. Retry {attempt + 1}/{DCA_MAX_RETRIES} in {delay}s")
                 await asyncio.sleep(delay)
                 continue
             else:

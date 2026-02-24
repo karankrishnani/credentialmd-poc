@@ -4,7 +4,10 @@ EverCred POC - FastAPI Main Application
 Entry point for the FastAPI backend server.
 """
 
+import logging
 from contextlib import asynccontextmanager
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
