@@ -2,6 +2,70 @@
 
 ## Current Session Progress
 
+### Date: Session 18 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 18 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #109: Single verification completes in under 5 seconds** ✅ PASSING
+   - Entered NPI 1003127655 (ABOSHADY, MOUSTAFA MOATAZ)
+   - Verification completed in ~159ms total pipeline time (well under 5s)
+   - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 1ms, llm_ms: 158ms
+   - Result: VERIFIED with 97% confidence
+   - License: A128437, Current/Active, expires 2026-03-31
+
+2. **Feature #13: Confidence score < 70 for multiple discrepancies** ✅ PASSING
+   - Entered NPI 4444444444 (LOWCONFIDENCE, ANNA M)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: ESCALATED status
+   - Confidence score: 60% (< 70 threshold triggers escalation)
+   - "Human Review Required" banner with reason: "Low confidence score (60)"
+   - Discrepancies Found:
+     - "License shows secondary status of Probation"
+     - "Physician may have disciplinary action on record"
+   - AI reasoning explains probation status requires additional scrutiny
+
+3. **Feature #4: License extraction flags HITL when no CA taxonomy** ✅ PASSING
+   - Entered NPI 1111111111 (GHOSTDOC, MICHAEL)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: ESCALATED status
+   - All data fields show N/A (no CA license found)
+   - "Human Review Required" banner with reason: "No CA license in NPI"
+   - Physician appears in HITL Queue with correct escalation reason
+   - External links (NPI Registry, CA DCA, LEIE) available on cards
+   - Action buttons: Approve, Reject, Request Info
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 46 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 151
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 201ms total pipeline
+  - Failure Rate: 0.9% overall
+  - Outcome Distribution: Verified 55 (36.4%), Flagged 29 (19.2%), Failed 21 (13.9%), Escalated 46 (30.5%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 199ms
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 151 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session18-dashboard.png - Dashboard with updated metrics (151 verifications)
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 17 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
