@@ -2,6 +2,73 @@
 
 ## Current Session Progress
 
+### Date: Session 44 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 44 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #51: HITL Approval changes status to verified** ✅ PASSING
+   - Created escalated verification for NPI 1111111111 (GHOSTDOC, MICHAEL - no CA license)
+   - Verification status: ESCALATED with reason "No CA license in NPI"
+   - Submitted approval via POST /api/verify/{id}/review with notes
+   - Status changed from "escalated" to **"verified"** ✅
+   - human_decision set to **"approved"** ✅
+   - human_notes stored correctly ✅
+   - needs_human_review set to false ✅
+   - Screenshot: regression-session44-escalated-for-hitl.png
+
+2. **Feature #52: HITL Reject moves to failed status** ✅ PASSING
+   - Created escalated verification for NPI 8888888888 (Unknown - NPI not found)
+   - Verification status: ESCALATED with reason "NPI not found"
+   - Submitted rejection via POST /api/verify/{id}/review with notes
+   - Status changed from "escalated" to **"failed"** ✅
+   - human_decision set to **"rejected"** ✅
+   - human_notes stored correctly ✅
+   - needs_human_review set to false ✅
+
+3. **Feature #82: Latency bar chart shows all sources** ✅ PASSING
+   - Navigated to Dashboard tab
+   - Latency by Source chart visible with all 4 sources:
+     - NPI: 0ms bar ✅
+     - DCA: 0ms bar ✅
+     - LEIE: 2ms bar ✅
+     - LLM: 202ms bar ✅
+   - Screenshot: regression-session44-dashboard.png
+
+#### Dashboard Verification:
+- Total Verifications: 223 (increased from 221 after testing)
+- Avg Cost: $0.02 per verification
+- Avg Latency: 204ms total pipeline
+- Failure Rate: 1.0%
+- Outcome Distribution: Verified 87 (39.0%), Flagged 39 (17.5%), Failed 36 (16.1%), Escalated 61 (27.4%)
+- All 4 charts rendering correctly (Latency by Source, Outcome Distribution, Cost Over Time, Retry Statistics)
+
+#### HITL Queue Verification:
+- 62 verifications pending review
+- Cards display correctly with all required fields
+- Approve, Reject, Request Info buttons functional
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: 223 verification records
+- Console errors: 1 (favicon 404 - cosmetic only)
+
+#### Screenshots Captured:
+- regression-session44-escalated-for-hitl.png - Escalated verification ready for HITL
+- regression-session44-hitl-queue.png - HITL review queue with 62 pending
+- regression-session44-dashboard.png - Dashboard with metrics and charts
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 43 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
