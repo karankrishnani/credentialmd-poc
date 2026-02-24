@@ -243,8 +243,30 @@ async def _playwright_lookup(license_number: str) -> DCALookupResult:
                         result.source_available = True
                         return result
 
-                    logger.info("DCA: Parsing result")
-                    article = await page.query_selector("article.post")
+                    articles = await page.query_selector_all("article.post")
+                    logger.info("DCA: Found %d result(s) for license=%s", len(articles), license_number)
+
+                    article = None
+                    if len(articles) == 1:
+                        article = articles[0]
+                    elif len(articles) > 1:
+                        # Multiple results — match by exact license number
+                        normalized_input = license_number.replace(" ", "").upper()
+                        for candidate in articles:
+                            lic_span = await candidate.query_selector("span[id^='lic']")
+                            if lic_span:
+                                lic_text = (await lic_span.text_content() or "").replace(" ", "").upper()
+                                if lic_text == normalized_input:
+                                    logger.info("DCA: Exact match found: %s", lic_text)
+                                    article = candidate
+                                    break
+                        if article is None:
+                            logger.warning(
+                                "DCA: No exact license match for %s among %d results, falling back to first",
+                                license_number, len(articles),
+                            )
+                            article = articles[0]
+
                     if article:
                         result = await _parse_dca_result(page, article)
 
@@ -322,13 +344,19 @@ async def _parse_dca_result(page, article) -> DCALookupResult:
             elif "Secondary Status:" in line:
                 result.secondary_status = line.replace("Secondary Status:", "").strip()
 
-        # Check for disciplinary action icon
-        disc_icon = await article.query_selector("img[alt*='disciplinary action']")
-        result.has_disciplinary_action = disc_icon is not None
+        # Check for disciplinary action icon (parent <a> is display:none when no action)
+        disc_link = await article.query_selector("a.iconLink[href$='#pr']")
+        if disc_link:
+            result.has_disciplinary_action = await disc_link.is_visible()
+        else:
+            result.has_disciplinary_action = False
 
-        # Check for public documents icon
-        docs_icon = await article.query_selector("img[alt*='public documents']")
-        result.has_public_documents = docs_icon is not None
+        # Check for public documents link
+        docs_link = await article.query_selector("a.iconLink:not([href$='#pr'])")
+        if docs_link:
+            result.has_public_documents = await docs_link.is_visible()
+        else:
+            result.has_public_documents = False
 
         # Extract city from span
         city_span = await article.query_selector("span[id^='city']")
