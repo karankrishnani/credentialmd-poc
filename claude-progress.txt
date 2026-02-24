@@ -2,6 +2,74 @@
 
 ## Current Session Progress
 
+### Date: Session 29 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 29 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #34: Verification creates record in DuckDB** ✅ PASSING
+   - Entered NPI 1003127655 (ABOSHADY, MOUSTAFA MOATAZ)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: VERIFIED status, 97% confidence
+   - Verified via API: GET /api/verify/{id} returns full record with:
+     - All fields populated (npi_number, provider_name, license_number, etc.)
+     - created_at timestamp: 2026-02-24T09:04:28.028486
+     - completed_at timestamp: 2026-02-24T09:04:28.159399
+     - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 2ms, llm_ms: 124ms
+     - llm_tokens_used: 572
+     - cost_usd: 0.02574
+
+2. **Feature #22: Finalize node persists to DuckDB** ✅ PASSING
+   - Same verification as above confirmed finalize node correctly persisted:
+     - created_at and completed_at timestamps set ✅
+     - All verification fields populated ✅
+     - LLM token usage and cost recorded ✅
+     - npi_raw and board_raw JSON fields populated ✅
+
+3. **Feature #53: HITL Request More Info action available** ✅ PASSING
+   - Triggered escalation by verifying NPI 1111111111 (GHOSTDOC, MICHAEL)
+   - Status: ESCALATED with "No CA license in NPI"
+   - Navigated to HITL Queue (58 verifications pending review)
+   - Verified all three action buttons present on cards:
+     - ✅ **Approve** (green button)
+     - ✅ **Reject** (red button)
+     - ✅ **Request Info** (amber/orange button)
+   - Cards show: Reason for Escalation, Collected Evidence, External Links, Review Notes
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 58 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 184 (increased from this session's tests)
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 202ms total pipeline
+  - Failure Rate: 1.1% overall
+  - Outcome Distribution: Verified 65 (35.3%), Flagged 34 (18.5%), Failed 27 (14.7%), Escalated 58 (31.5%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 3ms, LLM 199ms
+  - Failure Rates: NPI 0%, DCA 3.3%, LEIE 0%
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 184+ verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session29-hitl-queue.png - HITL Queue showing 58 pending reviews with action buttons
+- regression-session29-hitl-queue-scrolled.png - HITL Queue scrolled showing low confidence case
+- regression-session29-dashboard.png - Dashboard with metrics and charts (184 verifications)
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 28 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
