@@ -2,6 +2,75 @@
 
 ## Current Session Progress
 
+### Date: Session 36 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 36 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #8: LEIE lookup by NPI identifies excluded physician** ✅ PASSING
+   - Entered NPI 5555555555 (EXCLUDED, DOCTOR E)
+   - All 5 pipeline steps completed with checkmarks
+   - Status: **FAILED** with 0% confidence (correct for LEIE exclusion)
+   - OIG LEIE Exclusion Found warning banner displayed
+   - Discrepancies Found:
+     - "Physician found on OIG LEIE exclusion list"
+     - "LEIE Exclusion: EXCLUDED, DOCTOR excluded on 20200115 under authority 1128a(a)(1) (State: CA)"
+   - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 1ms, llm_ms: 124ms
+
+2. **Feature #74: Physicians process sequentially** ✅ PASSING
+   - Entered 3 NPIs: 1003127655, 1234567890, 5555555555
+   - Progress indicator showed "Processing 1 of 3..."
+   - Button disabled during processing ("Processing...")
+   - All rows initially showed "queued" status
+   - Final results:
+     - 1003127655 (ABOSHADY, MOUSTAFA MOATAZ) - verified 97%
+     - 1234567890 (CLEANDOC, JOHN P) - verified 97%
+     - 5555555555 (EXCLUDED, DOCTOR E) - failed 0% (LEIE exclusion)
+   - "3 / 3 completed" indicator displayed
+   - "Export CSV" link active
+
+3. **Feature #91: Full pipeline completes in mock mode** ✅ PASSING
+   - Dashboard showing real metrics computed from DuckDB
+   - Total Verifications: 203
+   - All 4 tabs (Verify, Batch, Dashboard, HITL Queue) rendering correctly
+   - Backend API metrics endpoint verified via curl
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 59 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 203 (increased by 4 from session 35's 199)
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 203ms total pipeline
+  - Failure Rate: 1.2% overall
+  - Outcome Distribution: Verified 76 (37.4%), Flagged 36 (17.7%), Failed 32 (15.8%), Escalated 59 (29.1%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 201ms
+  - Failure Rates: NPI 0%, DCA 3.5%, LEIE 0%
+- Console errors: 1 (favicon 404 which is cosmetic only)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 203 verification records
+- Console errors: 0 functional errors
+
+#### Screenshots Captured:
+- regression-session36-leie-failed.png - Pipeline with LEIE exclusion in progress
+- regression-session36-leie-failed-result.png - LEIE exclusion result with 0% confidence
+- regression-session36-batch-complete.png - Batch results with 3 completed verifications
+- regression-session36-dashboard.png - Dashboard with 203 total verifications
+- regression-session36-hitl-queue.png - HITL Queue showing 59 pending reviews
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 35 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
