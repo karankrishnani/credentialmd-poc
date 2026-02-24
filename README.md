@@ -37,47 +37,91 @@ Mock mode allows the entire pipeline to be tested and demoed without external de
 
 ## Architecture
 
+```mermaid
+graph TD
+    subgraph Frontend ["Frontend (Next.js)"]
+        Verify["Verify Tab"]
+        Batch["Batch Tab"]
+        Dashboard["Dashboard Tab"]
+        HITL["HITL Queue Tab"]
+    end
+
+    Frontend -->|"SSE / REST"| Backend
+
+    subgraph Backend ["Backend (FastAPI)"]
+        subgraph Workflow ["LangGraph Workflow"]
+            NPI["NPI Lookup"] --> ParallelLookups["Board Lookup<br/>LEIE Lookup"]
+            ParallelLookups --> Discrepancy["Discrepancy Detection<br/>(Claude)"]
+            Discrepancy --> RouteDecision["Route Decision"]
+            RouteDecision --> HumanReview["Human Review<br/>(LangGraph interrupt)"]
+            RouteDecision --> Finalize["Finalize"]
+            HumanReview --> Finalize
+        end
+
+        NPIClient["NPI Client<br/>(httpx)"]
+        DCAClient["DCA Client<br/>(Playwright)"]
+        LEIEClient["LEIE Client<br/>(DuckDB)"]
+    end
+
+    Backend --> DB[("DuckDB<br/>LEIE exclusions<br/>verification_log")]
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Frontend (Next.js)                          │
-│  ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌────────────────────────┐│
-│  │  Verify  │ │  Batch   │ │ Dashboard │ │     HITL Queue         ││
-│  │   Tab    │ │   Tab    │ │    Tab    │ │        Tab             ││
-│  └──────────┘ └──────────┘ └───────────┘ └────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────┘
-                                │ SSE / REST
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Backend (FastAPI)                           │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │                    LangGraph Workflow                           ││
-│  │  ┌────────────┐    ┌──────────────┐    ┌──────────────────┐   ││
-│  │  │ NPI Lookup │───▶│ Board Lookup │───▶│   Discrepancy    │   ││
-│  │  └────────────┘    │ LEIE Lookup  │    │    Detection     │   ││
-│  │                    └──────────────┘    │     (Claude)     │   ││
-│  │                           ▼            └────────┬─────────┘   ││
-│  │  ┌────────────┐    ┌──────────────┐            │              ││
-│  │  │  Finalize  │◀───│Route Decision│◀───────────┘              ││
-│  │  └────────────┘    └──────┬───────┘                           ││
-│  │         ▲                 │                                    ││
-│  │         │          ┌──────▼───────┐                           ││
-│  │         └──────────│ Human Review │ (LangGraph interrupt)     ││
-│  │                    └──────────────┘                           ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│                                                                     │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐          │
-│  │  NPI Client   │  │  DCA Client   │  │ LEIE Client   │          │
-│  │  (httpx)      │  │  (Playwright) │  │ (DuckDB)      │          │
-│  └───────────────┘  └───────────────┘  └───────────────┘          │
-└─────────────────────────────────────────────────────────────────────┘
-                                │
-                                ▼
-                    ┌───────────────────────┐
-                    │       DuckDB          │
-                    │  - LEIE exclusions    │
-                    │  - verification_log   │
-                    └───────────────────────┘
+
+## Verification Pipeline
+
+```mermaid
+flowchart TD
+    Start(["POST /api/verify"]) --> NPI["**NPI Lookup**<br/>NPI Registry API<br/><i>Rule-based parsing</i>"]
+
+    NPI --> NPICheck{"NPI found &<br/>has CA license?"}
+    NPICheck -->|No| HITL1["**HITL Escalation**<br/>LangGraph interrupt"]
+    NPICheck -->|Yes| Parallel
+
+    subgraph Parallel ["Parallel Lookups (asyncio.gather)"]
+        Board["**Board Lookup**<br/>CA DCA License Search<br/><i>Playwright scraper</i>"]
+        LEIE["**LEIE Lookup**<br/>OIG Exclusion List<br/><i>DuckDB query</i>"]
+    end
+
+    Parallel --> LLM["**Discrepancy Detection**<br/>Claude Opus<br/><i>Only LLM call in pipeline</i>"]
+
+    LLM --> Route{"**Route Decision**<br/><i>Rule-based</i>"}
+
+    Route -->|"LEIE match or<br/>license revoked"| Fail["FAILED"]
+    Route -->|"Confidence >= 90<br/>no discrepancies"| Verify["VERIFIED"]
+    Route -->|"Confidence >= 70"| Flag["FLAGGED"]
+    Route -->|"Confidence < 70 or<br/>source unavailable"| HITL2["**HITL Review**<br/>LangGraph interrupt"]
+
+    HITL1 --> Finalize
+    HITL2 -->|"Human decision"| Finalize
+    Fail --> Finalize["**Finalize**<br/>Persist to DuckDB"]
+    Verify --> Finalize
+    Flag --> Finalize
+
+    Finalize --> SSE["SSE stream → Frontend"]
 ```
+
+## Architecture Highlights
+
+**Single LLM call** — Only the discrepancy detection step calls Claude. NPI parsing, routing, and LEIE lookups are all rule-based or database queries, keeping cost low (~$0.01-0.03/verification).
+
+**Three data sources, verified in parallel** — NPI Registry (REST API), CA DCA License Search (Playwright web scraper), OIG LEIE Exclusion List (DuckDB). Board + LEIE run concurrently via `asyncio.gather()`.
+
+**Human-in-the-loop via LangGraph interrupt** — Ambiguous cases (low confidence, source unavailable, NPI issues) automatically pause the graph and appear in a review queue. Human decisions resume the workflow.
+
+**Routing rules (no LLM):**
+
+| Condition | Outcome |
+|---|---|
+| LEIE exclusion match | Auto-fail |
+| License revoked | Auto-fail |
+| Confidence >= 90, no discrepancies | Auto-verify |
+| Confidence >= 70 | Flag for review |
+| Confidence < 70 or source unavailable | Escalate to human |
+
+**Real-time SSE streaming** — Frontend receives step-by-step status updates (npi_lookup → license_check → exclusion_check → analyzing → result) via Server-Sent Events.
+
+**Mock mode ships by default** — Full pipeline testable without external dependencies (MockLLMProvider, synthetic DCA data, test LEIE CSV). Toggle to live with `EVERCRED_MOCK_MODE=false`.
+
+**Per-verification cost tracking** — Every verification logs LLM token usage, per-step latencies, retry counts, and estimated USD cost. Dashboard aggregates these into operational metrics.
 
 ## Project Structure
 
