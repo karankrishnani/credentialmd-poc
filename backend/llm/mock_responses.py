@@ -26,17 +26,17 @@ MOCK_RESPONSES: Dict[str, Dict[str, Any]] = {
                      "federal healthcare programs."
     },
 
-    # License Revoked - critical finding but flagged (not escalated)
+    # License Revoked - automatic failure (rule-based check fires before LLM scoring)
     "license_revoked": {
         "discrepancies": [
             "State board shows license revoked but NPI shows active status",
             "License revocation indicates serious disciplinary action"
         ],
-        "confidence_score": 72,
-        "reasoning": "License revocation is a critical finding that indicates the physician "
-                     "has had their medical license revoked by the state board. Despite the "
-                     "NPI record showing active enumeration status, this physician cannot "
-                     "legally practice medicine. Flagged for review due to revoked license."
+        "confidence_score": 0,
+        "reasoning": "License revocation is a critical finding that results in automatic "
+                     "verification failure. The physician's medical license has been revoked "
+                     "by the state board and they cannot legally practice medicine. This is "
+                     "caught by rule-based checks before LLM scoring is evaluated."
     },
 
     # License Surrendered

@@ -12,11 +12,14 @@ Defines the node functions for the verification workflow:
 """
 
 import asyncio
+import logging
 import re
 import time
 from datetime import datetime
 from typing import Dict, Any
 import json
+
+logger = logging.getLogger(__name__)
 
 from graph.state import VerificationState, set_hitl_escalation
 
@@ -57,8 +60,14 @@ async def npi_lookup(state: VerificationState) -> Dict[str, Any]:
     try:
         npi_number = state.get("npi_number", "")
         target_state = state.get("target_state", "CA")
+        logger.info("[NPI] Starting lookup for NPI=%s state=%s", npi_number, target_state)
 
         result = await lookup_npi(npi_number, target_state)
+
+        logger.info(
+            "[NPI] Result: found=%s active=%s license=%s latency=%dms",
+            result.npi_found, result.npi_active, result.license_number, result.latency_ms,
+        )
 
         # Update state from NPI lookup result
         updates["npi_response"] = result.raw_response
@@ -91,6 +100,7 @@ async def npi_lookup(state: VerificationState) -> Dict[str, Any]:
 
         # Check for HITL triggers
         if result.needs_hitl:
+            logger.warning("[HITL] NPI lookup triggered escalation: %s", result.hitl_reason)
             updates["needs_human_review"] = True
             updates["human_review_reason"] = result.hitl_reason
             updates["verification_status"] = "escalated"
@@ -106,6 +116,7 @@ async def npi_lookup(state: VerificationState) -> Dict[str, Any]:
             ]
 
     except Exception as e:
+        logger.error("[NPI] Lookup failed for NPI=%s: %s", state.get("npi_number"), e, exc_info=True)
         source_available = dict(state.get("source_available", {"npi": True, "dca": True, "leie": True}))
         source_available["npi"] = False
         updates["source_available"] = source_available
@@ -136,6 +147,7 @@ async def board_lookup(state: VerificationState) -> Dict[str, Any]:
     # Skip if no license number was found in NPI lookup
     license_number = state.get("license_number")
     if not license_number:
+        logger.info("[DCA] Skipping board lookup — no license number from NPI")
         source_available = dict(state.get("source_available", {"npi": True, "dca": True, "leie": True}))
         source_available["dca"] = False
         updates["source_available"] = source_available
@@ -147,7 +159,14 @@ async def board_lookup(state: VerificationState) -> Dict[str, Any]:
 
     try:
         target_state = state.get("target_state", "CA")
+        logger.info("[DCA] Starting board lookup for license=%s", license_number)
         result = await lookup_dca_license(license_number, target_state)
+
+        logger.info(
+            "[DCA] Result: status=%s expiry=%s disciplinary=%s latency=%dms",
+            result.license_status, result.expiration_date,
+            result.has_disciplinary_action, result.latency_ms,
+        )
 
         # Update state from DCA lookup result
         updates["board_license_status"] = result.license_status
@@ -171,6 +190,7 @@ async def board_lookup(state: VerificationState) -> Dict[str, Any]:
 
         # Check source availability
         if not result.source_available:
+            logger.warning("[DCA] Source unavailable: %s", result.error_message)
             source_available = dict(state.get("source_available", {"npi": True, "dca": True, "leie": True}))
             source_available["dca"] = False
             updates["source_available"] = source_available
@@ -180,6 +200,7 @@ async def board_lookup(state: VerificationState) -> Dict[str, Any]:
             updates["errors"] = errors
 
     except Exception as e:
+        logger.error("[DCA] Lookup failed for license=%s: %s", license_number, e, exc_info=True)
         source_available = dict(state.get("source_available", {"npi": True, "dca": True, "leie": True}))
         source_available["dca"] = False
         updates["source_available"] = source_available
@@ -204,6 +225,8 @@ async def leie_lookup(state: VerificationState) -> Dict[str, Any]:
         first_name = state.get("provider_first_name")
         last_name = state.get("provider_last_name")
         target_state = state.get("target_state", "CA")
+        logger.info("[LEIE] Starting exclusion check NPI=%s name=%s,%s state=%s",
+                     npi_number, last_name, first_name, target_state)
 
         result = lookup_leie(
             npi=npi_number,
@@ -216,12 +239,19 @@ async def leie_lookup(state: VerificationState) -> Dict[str, Any]:
         updates["leie_match"] = result.leie_match
         updates["leie_record"] = result.leie_record
 
+        if result.leie_match:
+            logger.warning("[LEIE] Exclusion match found: type=%s latency=%dms",
+                           result.match_type, result.latency_ms)
+        else:
+            logger.info("[LEIE] No exclusion match, latency=%dms", result.latency_ms)
+
         # Record latency
         step_latencies = dict(state.get("step_latencies", {}))
         step_latencies["leie_ms"] = result.latency_ms
         updates["step_latencies"] = step_latencies
 
     except Exception as e:
+        logger.error("[LEIE] Lookup failed: %s", e, exc_info=True)
         source_available = dict(state.get("source_available", {"npi": True, "dca": True, "leie": True}))
         source_available["leie"] = False
         updates["source_available"] = source_available
@@ -241,6 +271,8 @@ async def discrepancy_detection(state: VerificationState) -> Dict[str, Any]:
     """
     updates = {"verification_status": "analyzing"}
     start_time = time.time()
+
+    logger.info("[LLM] Starting discrepancy detection")
 
     # Build the prompt with all collected evidence
     evidence = _build_evidence_summary(state)
@@ -268,11 +300,15 @@ Respond with valid JSON only, in this exact format:
 Remember: Respond with valid JSON only."""
 
     try:
+        logger.debug("[LLM] Evidence length=%d, system prompt length=%d", len(evidence), len(system_prompt))
         llm = get_llm_provider()
         response = await llm.query(user_prompt, system_prompt)
 
         # Record token usage
         updates["llm_tokens_used"] = llm.get_tokens_used()
+        logger.info("[LLM] Response: tokens=%d length=%d latency=%dms",
+                     llm.get_tokens_used(), len(response) if response else 0,
+                     int((time.time() - start_time) * 1000))
 
         step_latencies = dict(state.get("step_latencies", {}))
         step_latencies["llm_ms"] = int((time.time() - start_time) * 1000)
@@ -287,10 +323,12 @@ Remember: Respond with valid JSON only."""
             updates["discrepancies"] = discrepancies
             updates["confidence_score"] = parsed.get("confidence_score", 50)
             updates["confidence_reasoning"] = parsed.get("reasoning", "")
+            logger.info("[LLM] Parsed: confidence=%s discrepancies=%d",
+                         parsed.get("confidence_score"), len(parsed.get("discrepancies", [])))
         except json.JSONDecodeError as e:
-            import logging
-            logging.getLogger("graph.nodes").warning(
-                f"LLM JSON parse failed: {e}. Raw response (first 500 chars): {repr(response[:500]) if response else 'None'}"
+            logger.warning(
+                "[LLM] JSON parse failed: %s. Raw response (first 500 chars): %s",
+                e, repr(response[:500]) if response else "None",
             )
             errors = list(state.get("errors", []))
             errors.append("Failed to parse LLM response as JSON")
@@ -299,6 +337,7 @@ Remember: Respond with valid JSON only."""
             updates["confidence_reasoning"] = "Unable to parse LLM response"
 
     except Exception as e:
+        logger.error("[LLM] Discrepancy detection failed: %s", e, exc_info=True)
         errors = list(state.get("errors", []))
         errors.append(f"LLM error: {str(e)}")
         updates["errors"] = errors
@@ -311,6 +350,7 @@ Remember: Respond with valid JSON only."""
 
     # Calculate cost
     updates["cost_usd"] = _calculate_cost(updates.get("llm_tokens_used", 0))
+    logger.debug("[LLM] Estimated cost: $%.6f", updates["cost_usd"])
 
     return updates
 
@@ -324,31 +364,47 @@ def route_decision(state: VerificationState) -> str:
     Returns:
         "verify", "flag", "fail", or "review"
     """
+    logger.debug("[ROUTE] Inputs: leie_match=%s board_status=%s needs_review=%s confidence=%s",
+                  state.get("leie_match"), state.get("board_license_status"),
+                  state.get("needs_human_review"), state.get("confidence_score"))
+
     # Rule 1: LEIE match is automatic failure
     if state.get("leie_match", False):
+        logger.info("[ROUTE] Decision=fail (Rule 1: LEIE match)")
         return "fail"
 
-    # Rule 2: Already flagged for HITL
+    # Rule 2: License Revoked is automatic failure
+    board_status = state.get("board_license_status") or ""
+    if board_status == "License Revoked":
+        logger.info("[ROUTE] Decision=fail (Rule 2: License Revoked)")
+        return "fail"
+
+    # Rule 3: Already flagged for HITL
     if state.get("needs_human_review", False):
+        logger.info("[ROUTE] Decision=review (Rule 3: HITL flagged)")
         return "review"
 
-    # Rule 3: Source unavailable - flag for review
+    # Rule 4: Source unavailable - flag for review
     source_available = state.get("source_available", {"npi": True, "dca": True, "leie": True})
     if not all(source_available.values()):
+        logger.info("[ROUTE] Decision=flag (Rule 4: source unavailable)")
         return "flag"
 
     # Get confidence score (default to 50 if not set)
     confidence = state.get("confidence_score") or 50
 
-    # Rule 4: High confidence - auto-verify
+    # Rule 5: High confidence - auto-verify
     if confidence >= CONFIDENCE_AUTO_VERIFY and not state.get("discrepancies"):
+        logger.info("[ROUTE] Decision=verify (Rule 5: confidence=%d)", confidence)
         return "verify"
 
-    # Rule 5: Medium confidence - flag for review
+    # Rule 6: Medium confidence - flag for review
     if confidence >= CONFIDENCE_FLAG_REVIEW:
+        logger.info("[ROUTE] Decision=flag (Rule 6: confidence=%d)", confidence)
         return "flag"
 
-    # Rule 6: Low confidence - escalate to human
+    # Rule 7: Low confidence - escalate to human
+    logger.info("[ROUTE] Decision=review (Rule 7: low confidence=%d)", confidence)
     return "review"
 
 
@@ -360,6 +416,7 @@ async def route_decision_node(state: VerificationState) -> Dict[str, Any]:
 
     # Apply routing logic
     decision = route_decision(state)
+    logger.info("[ROUTE] Decision node: decision=%s", decision)
 
     if decision == "fail":
         updates["verification_status"] = "failed"
@@ -367,6 +424,13 @@ async def route_decision_node(state: VerificationState) -> Dict[str, Any]:
         if leie_record:
             discrepancies = list(state.get("discrepancies", []))
             discrepancies.append(format_exclusion_reason(leie_record))
+            updates["discrepancies"] = discrepancies
+        elif (state.get("board_license_status") or "") == "License Revoked":
+            discrepancies = list(state.get("discrepancies", []))
+            discrepancies.append(
+                "AUTOMATIC FAIL: State board license status is 'License Revoked'. "
+                "Physician cannot legally practice medicine."
+            )
             updates["discrepancies"] = discrepancies
 
     elif decision == "flag":
@@ -397,6 +461,7 @@ async def human_review(state: VerificationState) -> Dict[str, Any]:
 
     Marks the state as needing human review.
     """
+    logger.info("[HITL] Entering human review: reason=%s", state.get("human_review_reason", "Routed to human review"))
     updates = {"verification_status": "escalated"}
 
     if not state.get("needs_human_review"):
@@ -414,6 +479,9 @@ async def finalize(state: VerificationState) -> Dict[str, Any]:
     - Calculate total cost
     - Persist results to DuckDB verification_log table
     """
+    logger.info("[FINALIZE] Starting finalization: id=%s status=%s human_decision=%s",
+                 state.get("verification_id"), state.get("verification_status"),
+                 state.get("human_decision"))
     updates = {"completed_at": datetime.utcnow().isoformat()}
 
     # If human review approved, set to verified
@@ -460,8 +528,12 @@ async def finalize(state: VerificationState) -> Dict[str, Any]:
         }
 
         db.insert_verification_log(verification_data)
+        logger.info("[FINALIZE] Persisted to DB: id=%s status=%s confidence=%s cost=$%.6f",
+                     verification_data["id"], verification_data["verification_status"],
+                     verification_data["confidence_score"], verification_data.get("cost_usd", 0))
 
     except Exception as e:
+        logger.error("[FINALIZE] Database persist failed: %s", e, exc_info=True)
         errors = list(state.get("errors", []))
         errors.append(f"Database error: {str(e)}")
         updates["errors"] = errors
