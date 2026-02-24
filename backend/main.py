@@ -77,9 +77,9 @@ async def get_config():
     return get_config_summary()
 
 
-# TODO: Import and include API routers
-# from api.routes import router as api_router
-# app.include_router(api_router, prefix="/api")
+# Import and include API routers
+from api.routes import router as api_router
+app.include_router(api_router, prefix="/api")
 
 
 if __name__ == "__main__":

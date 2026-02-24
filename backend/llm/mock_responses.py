@@ -173,27 +173,36 @@ def get_mock_llm_response(prompt: str, system: str = "") -> str:
     combined = (prompt + " " + system).lower()
 
     # Check patterns in order of priority
-    if "leie" in combined and ("match" in combined or "exclusion" in combined or "excluded" in combined):
+    # Note: We need to be careful with pattern matching since the evidence
+    # summary always includes section headers like "LEIE Exclusion Check"
+
+    # LEIE match - look for explicit "leie match found: true"
+    if "leie match found: true" in combined:
         response = MOCK_RESPONSES["leie_match"]
-    elif "license revoked" in combined or "revoked" in combined:
+    # License status checks
+    elif "license status: license revoked" in combined or "license_status: revoked" in combined:
         response = MOCK_RESPONSES["license_revoked"]
-    elif "license surrendered" in combined or "surrendered" in combined:
+    elif "license status: license surrendered" in combined or "license_status: surrendered" in combined:
         response = MOCK_RESPONSES["license_surrendered"]
-    elif "delinquent" in combined:
+    elif "license status: delinquent" in combined:
         response = MOCK_RESPONSES["license_delinquent"]
-    elif "source_unavailable" in combined or "unavailable" in combined:
+    # Source availability
+    elif "source available: false" in combined:
         response = MOCK_RESPONSES["source_unavailable"]
-    elif "name" in combined and ("mismatch" in combined or "differ" in combined or "discrepancy" in combined):
+    # Name mismatch - look for actual name differences
+    elif "mismatch" in combined.replace("name_mismatch", ""):
         response = MOCK_RESPONSES["name_mismatch"]
-    elif "no primary" in combined or "no ca" in combined or "no california" in combined:
+    # No primary taxonomy warning
+    elif "no primary taxonomy" in combined:
         response = MOCK_RESPONSES["no_primary_taxonomy"]
-    elif "probation" in combined:
+    # Probation - look for explicit probation status
+    elif "secondary status: probation" in combined:
         response = MOCK_RESPONSES["probation"]
-    elif "disciplinary" in combined:
+    # Disciplinary action - look for explicit flag
+    elif "has disciplinary action: true" in combined:
         response = MOCK_RESPONSES["disciplinary_action"]
-    elif "current/active" in combined and "no discrepancies" not in combined:
-        response = MOCK_RESPONSES["clean"]
-    elif "clean" in combined or "verified" in combined:
+    # Clean case - has active license and no issues
+    elif "license status: current/active" in combined and "leie match found: false" in combined:
         response = MOCK_RESPONSES["clean"]
     else:
         response = MOCK_RESPONSES["default"]

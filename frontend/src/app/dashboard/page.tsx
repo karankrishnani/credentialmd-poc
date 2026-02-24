@@ -1,49 +1,129 @@
 'use client';
 
-export default function DashboardPage() {
-  // Placeholder metrics
-  const metrics = {
-    totalVerifications: 0,
-    avgCost: 0.0,
-    avgLatency: 0,
-    failureRate: 0.0,
+import { useState, useEffect, useCallback } from 'react';
+
+// API base URL - configurable for development
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+
+interface MetricsData {
+  total_verifications: number;
+  avg_cost_usd: number;
+  avg_latency_ms: {
+    npi: number;
+    dca: number;
+    leie: number;
+    llm: number;
   };
+  failure_rates: {
+    npi: number;
+    dca: number;
+    leie: number;
+  };
+  outcome_distribution: {
+    verified: number;
+    flagged: number;
+    failed: number;
+    escalated: number;
+  };
+}
+
+export default function DashboardPage() {
+  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/metrics`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setMetrics(data);
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMetrics();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchMetrics, 30000);
+    return () => clearInterval(interval);
+  }, [fetchMetrics]);
+
+  // Calculate total latency
+  const totalLatency = metrics
+    ? metrics.avg_latency_ms.npi + metrics.avg_latency_ms.dca + metrics.avg_latency_ms.leie + metrics.avg_latency_ms.llm
+    : 0;
+
+  // Calculate overall failure rate
+  const overallFailureRate = metrics
+    ? (metrics.failure_rates.npi + metrics.failure_rates.dca + metrics.failure_rates.leie) / 3
+    : 0;
+
+  // Calculate total outcomes
+  const totalOutcomes = metrics
+    ? metrics.outcome_distribution.verified +
+      metrics.outcome_distribution.flagged +
+      metrics.outcome_distribution.failed +
+      metrics.outcome_distribution.escalated
+    : 0;
 
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <div>
-        <h2 className="text-2xl font-semibold text-slate-800">
-          Dashboard
-        </h2>
-        <p className="mt-1 text-slate-600">
-          Verification metrics and performance analytics
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold text-slate-800">
+            Dashboard
+          </h2>
+          <p className="mt-1 text-slate-600">
+            Verification metrics and performance analytics
+          </p>
+        </div>
+        <button
+          onClick={fetchMetrics}
+          disabled={isLoading}
+          className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors disabled:opacity-50"
+        >
+          {isLoading ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-danger-50 border border-danger-200 rounded-lg p-4 text-danger-700">
+          {error}
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard
           title="Total Verifications"
-          value={metrics.totalVerifications.toString()}
+          value={isLoading ? '...' : (metrics?.total_verifications ?? 0).toString()}
           subtitle="all time"
           color="blue"
         />
         <MetricCard
           title="Avg Cost"
-          value={`$${metrics.avgCost.toFixed(2)}`}
+          value={isLoading ? '...' : `$${(metrics?.avg_cost_usd ?? 0).toFixed(2)}`}
           subtitle="per verification"
           color="green"
         />
         <MetricCard
           title="Avg Latency"
-          value={`${metrics.avgLatency}ms`}
+          value={isLoading ? '...' : `${totalLatency}ms`}
           subtitle="total pipeline"
           color="amber"
         />
         <MetricCard
           title="Failure Rate"
-          value={`${metrics.failureRate.toFixed(1)}%`}
+          value={isLoading ? '...' : `${(overallFailureRate * 100).toFixed(1)}%`}
           subtitle="overall"
           color="red"
         />
@@ -55,9 +135,23 @@ export default function DashboardPage() {
           <h3 className="text-lg font-medium text-slate-800 mb-4">
             Latency by Source
           </h3>
-          <div className="h-64 flex items-center justify-center text-slate-400">
-            {/* Placeholder for Recharts BarChart */}
-            <p>No data yet</p>
+          <div className="h-64">
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading...
+              </div>
+            ) : metrics ? (
+              <div className="space-y-4">
+                <LatencyBar label="NPI" value={metrics.avg_latency_ms.npi} max={Math.max(...Object.values(metrics.avg_latency_ms))} color="blue" />
+                <LatencyBar label="DCA" value={metrics.avg_latency_ms.dca} max={Math.max(...Object.values(metrics.avg_latency_ms))} color="green" />
+                <LatencyBar label="LEIE" value={metrics.avg_latency_ms.leie} max={Math.max(...Object.values(metrics.avg_latency_ms))} color="amber" />
+                <LatencyBar label="LLM" value={metrics.avg_latency_ms.llm} max={Math.max(...Object.values(metrics.avg_latency_ms))} color="purple" />
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                No data yet
+              </div>
+            )}
           </div>
         </div>
 
@@ -65,9 +159,43 @@ export default function DashboardPage() {
           <h3 className="text-lg font-medium text-slate-800 mb-4">
             Outcome Distribution
           </h3>
-          <div className="h-64 flex items-center justify-center text-slate-400">
-            {/* Placeholder for Recharts PieChart */}
-            <p>No data yet</p>
+          <div className="h-64">
+            {isLoading ? (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                Loading...
+              </div>
+            ) : metrics && totalOutcomes > 0 ? (
+              <div className="space-y-4">
+                <OutcomeRow
+                  label="Verified"
+                  value={metrics.outcome_distribution.verified}
+                  total={totalOutcomes}
+                  color="success"
+                />
+                <OutcomeRow
+                  label="Flagged"
+                  value={metrics.outcome_distribution.flagged}
+                  total={totalOutcomes}
+                  color="warning"
+                />
+                <OutcomeRow
+                  label="Failed"
+                  value={metrics.outcome_distribution.failed}
+                  total={totalOutcomes}
+                  color="danger"
+                />
+                <OutcomeRow
+                  label="Escalated"
+                  value={metrics.outcome_distribution.escalated}
+                  total={totalOutcomes}
+                  color="purple"
+                />
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400">
+                No data yet
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -80,7 +208,7 @@ export default function DashboardPage() {
           </h3>
           <div className="h-64 flex items-center justify-center text-slate-400">
             {/* Placeholder for Recharts LineChart */}
-            <p>No data yet</p>
+            <p>Coming soon</p>
           </div>
         </div>
 
@@ -90,7 +218,7 @@ export default function DashboardPage() {
           </h3>
           <div className="h-64 flex items-center justify-center text-slate-400">
             {/* Placeholder for Recharts BarChart */}
-            <p>No data yet</p>
+            <p>Coming soon</p>
           </div>
         </div>
       </div>
@@ -123,6 +251,87 @@ function MetricCard({
         {value}
       </p>
       <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
+    </div>
+  );
+}
+
+function LatencyBar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: 'blue' | 'green' | 'amber' | 'purple';
+}) {
+  const percentage = max > 0 ? (value / max) * 100 : 0;
+  const colorClasses = {
+    blue: 'bg-blue-500',
+    green: 'bg-green-500',
+    amber: 'bg-amber-500',
+    purple: 'bg-purple-500',
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-sm">
+        <span className="text-slate-600">{label}</span>
+        <span className="text-slate-800 font-medium">{value}ms</span>
+      </div>
+      <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${colorClasses[color]} rounded-full transition-all duration-500`}
+          style={{ width: `${Math.max(percentage, 2)}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function OutcomeRow({
+  label,
+  value,
+  total,
+  color,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  color: 'success' | 'warning' | 'danger' | 'purple';
+}) {
+  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+  const colorClasses = {
+    success: 'bg-success-500 text-success-700',
+    warning: 'bg-warning-500 text-warning-700',
+    danger: 'bg-danger-500 text-danger-700',
+    purple: 'bg-purple-500 text-purple-700',
+  };
+  const bgColorClasses = {
+    success: 'bg-success-100',
+    warning: 'bg-warning-100',
+    danger: 'bg-danger-100',
+    purple: 'bg-purple-100',
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className={`w-3 h-3 rounded-full ${colorClasses[color].split(' ')[0]}`} />
+      <div className="flex-1">
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">{label}</span>
+          <span className={`font-medium ${colorClasses[color].split(' ')[1]}`}>
+            {value} ({percentage}%)
+          </span>
+        </div>
+        <div className="mt-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full ${colorClasses[color].split(' ')[0]} rounded-full transition-all duration-500`}
+            style={{ width: `${parseFloat(percentage)}%` }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
