@@ -16,6 +16,17 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
+cleanup() {
+    echo ""
+    echo -e "${YELLOW}Shutting down services...${NC}"
+    [ -n "$BACKEND_PID" ] && kill $BACKEND_PID 2>/dev/null || true
+    [ -n "$BACKEND_PID" ] && pkill -P $BACKEND_PID 2>/dev/null || true
+    [ -n "$FRONTEND_PID" ] && kill $FRONTEND_PID 2>/dev/null || true
+    [ -n "$FRONTEND_PID" ] && pkill -P $FRONTEND_PID 2>/dev/null || true
+    echo -e "${GREEN}Services stopped.${NC}"
+}
+trap cleanup EXIT
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   EverCred POC - Development Setup${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -178,16 +189,23 @@ fi
 
 echo ""
 
-# Function to cleanup background processes on exit
-cleanup() {
-    echo ""
-    echo -e "${YELLOW}Shutting down services...${NC}"
-    kill $BACKEND_PID 2>/dev/null || true
-    kill $FRONTEND_PID 2>/dev/null || true
-    echo -e "${GREEN}Services stopped.${NC}"
-}
-
-trap cleanup EXIT
+# Check for port conflicts before starting
+echo -e "${YELLOW}Checking ports...${NC}"
+PORT_CONFLICT=0
+if lsof -i :8000 -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
+    echo -e "  ${RED}Port 8000 in use. Run: lsof -i :8000${NC}"
+    lsof -i :8000 2>/dev/null || true
+    PORT_CONFLICT=1
+fi
+if lsof -i :3000 -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
+    echo -e "  ${RED}Port 3000 in use. Run: lsof -i :3000${NC}"
+    lsof -i :3000 2>/dev/null || true
+    PORT_CONFLICT=1
+fi
+if [ $PORT_CONFLICT -eq 1 ]; then
+    echo -e "${RED}Stop the processes above or kill them before restarting.${NC}"
+    exit 1
+fi
 
 # Start backend
 echo -e "${YELLOW}Starting backend server...${NC}"
@@ -197,7 +215,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 echo -e "  ${GREEN}Backend starting on http://localhost:8000${NC}"
 
-# Wait for backend to be ready
 sleep 2
 
 # Start frontend
@@ -207,7 +224,6 @@ npm run dev &
 FRONTEND_PID=$!
 echo -e "  ${GREEN}Frontend starting on http://localhost:3000${NC}"
 
-# Wait for frontend to be ready
 sleep 3
 
 echo ""
