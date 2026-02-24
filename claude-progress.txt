@@ -2,6 +2,67 @@
 
 ## Current Session Progress
 
+### Date: Session 15 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 15 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #6: DCA returns correct status for expired license** ✅ PASSING
+   - Entered NPI 3333333333 (EXPIREDLICENSE, DAVID)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: FLAGGED, 75% confidence
+   - License Status: Delinquent ✅
+   - Expiration Date: 2024-06-30 (in the past) ✅
+   - Discrepancies: "License renewal is delinquent, may indicate lapsed credentials" and "Expiration date has passed without renewal" ✅
+
+2. **Feature #75: Each row updates independently** ✅ PASSING
+   - Started batch with 3 NPIs: 1003127655, 2222222222, 5555555555
+   - Initial display showed all rows with "queued" status
+   - Sequential processing indicator: "Processing 1 of 3..."
+   - Each row updated independently as it completed
+   - Final results:
+     - 1003127655 (ABOSHADY) - verified 97%
+     - 2222222222 (MISMATCH) - flagged 72%
+     - 5555555555 (EXCLUDED) - failed 0%
+
+3. **Feature #40: Batch progress table shows real per-physician status** ✅ PASSING
+   - Same batch test as above verified this feature
+   - Table showed real-time updates during processing
+   - Each row displayed actual verification outcomes
+   - Export CSV link available after completion
+   - "3 / 3 completed" indicator displayed
+
+#### Additional Verification:
+- Dashboard showing 146 total verifications with real metrics
+- Avg Cost: $0.02, Avg Latency: 201ms, Failure Rate: 0.9%
+- Outcome Distribution: Verified 54 (37.0%), Flagged 29 (19.9%), Failed 21 (14.4%), Escalated 42 (28.8%)
+- Latency by Source: NPI 0ms, DCA 0ms, LEIE 2ms, LLM 199ms
+- HITL Queue showing 42 verifications pending review
+- API metrics endpoint verified via curl - returns complete JSON response
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 146 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session15-feature6-delinquent.png - Delinquent license verification result
+- regression-session15-batch-results.png - Batch results with 3 mixed outcomes
+- regression-session15-dashboard.png - Dashboard with updated metrics (146 verifications)
+- regression-session15-hitl-queue.png - HITL Queue showing 42 pending reviews
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 14 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
