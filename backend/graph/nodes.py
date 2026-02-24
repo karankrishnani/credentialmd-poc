@@ -384,11 +384,12 @@ def route_decision(state: VerificationState) -> str:
         logger.info("[ROUTE] Decision=review (Rule 3: HITL flagged)")
         return "review"
 
-    # Rule 4: Source unavailable - flag for review
+    # Rule 4: Source unavailable - escalate to human review
     source_available = state.get("source_available", {"npi": True, "dca": True, "leie": True})
     if not all(source_available.values()):
-        logger.info("[ROUTE] Decision=flag (Rule 4: source unavailable)")
-        return "flag"
+        unavailable = [k for k, v in source_available.items() if not v]
+        logger.info("[ROUTE] Decision=review (Rule 4: source unavailable: %s)", ", ".join(unavailable))
+        return "review"
 
     # Get confidence score (default to 50 if not set)
     confidence = state.get("confidence_score") or 50
@@ -449,8 +450,16 @@ async def route_decision_node(state: VerificationState) -> Dict[str, Any]:
         updates["verification_status"] = "escalated"
         updates["needs_human_review"] = True
         if not state.get("human_review_reason"):
-            confidence = state.get("confidence_score") or 50
-            updates["human_review_reason"] = f"Low confidence score ({confidence})"
+            source_available = state.get("source_available", {"npi": True, "dca": True, "leie": True})
+            if not all(source_available.values()):
+                unavailable = [k.upper() for k, v in source_available.items() if not v]
+                updates["human_review_reason"] = f"Data source unavailable: {', '.join(unavailable)}"
+                discrepancies = list(state.get("discrepancies", []))
+                discrepancies.append(f"Source(s) unavailable: {', '.join(unavailable)}")
+                updates["discrepancies"] = discrepancies
+            else:
+                confidence = state.get("confidence_score") or 50
+                updates["human_review_reason"] = f"Low confidence score ({confidence})"
 
     return updates
 
