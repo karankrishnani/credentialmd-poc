@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 // API base URL - configurable for development
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Pipeline step definitions
 const PIPELINE_STEPS = [
@@ -47,6 +48,8 @@ interface VerificationResult {
 }
 
 export default function VerifyPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [npi, setNpi] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,12 +59,40 @@ export default function VerifyPage() {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [verificationId, setVerificationId] = useState<string | null>(null);
 
+  // Load verification result from URL parameter on mount
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id && !result) {
+      setIsLoading(true);
+      fetch(`${API_BASE_URL}/api/verify/${id}`)
+        .then(res => {
+          if (!res.ok) throw new Error('Verification not found');
+          return res.json();
+        })
+        .then(data => {
+          setResult(data);
+          setNpi(data.npi_number || '');
+          setVerificationId(id);
+          setSteps(prev => prev.map(s => ({ ...s, status: 'completed' as StepStatus })));
+        })
+        .catch(err => {
+          console.error('Failed to load verification:', err);
+          setError('Failed to load verification result. It may have expired or been deleted.');
+          // Clear the invalid ID from URL
+          router.replace('/verify');
+        })
+        .finally(() => setIsLoading(false));
+    }
+  }, [searchParams, result, router]);
+
   const resetPipeline = useCallback(() => {
     setSteps(PIPELINE_STEPS.map(s => ({ ...s, status: 'pending' as StepStatus })));
     setResult(null);
     setVerificationId(null);
     setError('');
-  }, []);
+    // Clear URL parameter when resetting
+    router.replace('/verify');
+  }, [router]);
 
   const updateStepStatus = useCallback((stepId: string, status: StepStatus) => {
     setSteps(prev => prev.map(step =>
@@ -128,6 +159,8 @@ export default function VerifyPage() {
             setResult(update.data);
             eventSource.close();
             setIsLoading(false);
+            // Update URL with verification ID for persistence
+            router.replace(`/verify?id=${data.verification_id}`);
           } else if (update.step && update.step !== 'start') {
             // Mark current step as active and previous as completed
             markStepsUpTo(update.step, 'active');
@@ -149,6 +182,8 @@ export default function VerifyPage() {
             const resultData = await resultResponse.json();
             setResult(resultData);
             setSteps(prev => prev.map(s => ({ ...s, status: 'completed' as StepStatus })));
+            // Update URL with verification ID for persistence
+            router.replace(`/verify?id=${data.verification_id}`);
           }
         } catch (pollErr) {
           setError('Connection lost. Please try again.');
