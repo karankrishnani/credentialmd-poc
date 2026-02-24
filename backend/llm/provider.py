@@ -2,7 +2,7 @@
 LLM Provider Abstraction
 
 Provides an abstract base class and implementations for mock/live LLM access.
-The factory function returns the appropriate provider based on EVERCRED_MOCK_MODE.
+The factory function returns the appropriate provider based on CREDENTIALMD_MOCK_MODE.
 """
 
 import logging

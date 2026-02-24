@@ -1,5 +1,5 @@
 """
-EverCred POC Configuration
+CredentialMD Configuration
 
 Loads configuration from environment variables with sensible defaults.
 """
@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 # Mock Mode - default to True for development/testing
-MOCK_MODE = os.getenv("EVERCRED_MOCK_MODE", "true").lower() == "true"
+MOCK_MODE = os.getenv("CREDENTIALMD_MOCK_MODE", "true").lower() == "true"
 
 # Logging configuration
 LOG_LEVEL_NAME = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -28,7 +28,7 @@ BACKEND_PORT = int(os.getenv("BACKEND_PORT", "8000"))
 FRONTEND_PORT = int(os.getenv("FRONTEND_PORT", "3000"))
 
 # Database configuration
-DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", str(PROJECT_ROOT / "data" / "evercred.duckdb")))
+DUCKDB_PATH = Path(os.getenv("DUCKDB_PATH", str(PROJECT_ROOT / "data" / "credentialmd.duckdb")))
 
 # LEIE CSV configuration
 if MOCK_MODE:

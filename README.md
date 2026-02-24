@@ -1,4 +1,4 @@
-# EverCred POC - Physician Credentialing Verification Agent
+# CredentialMD - Physician Credentialing Verification Agent
 
 A LangGraph-based AI agent that automates physician credentialing verification by orchestrating lookups across three public data sources: the NPI Registry API, the California DCA License Search, and the OIG LEIE exclusion list.
 
@@ -26,7 +26,7 @@ This will:
 
 ## Mock Mode (Default)
 
-The app ships with `EVERCRED_MOCK_MODE=true` by default. In mock mode:
+The app ships with `CREDENTIALMD_MOCK_MODE=true` by default. In mock mode:
 
 - **MockLLMProvider** returns realistic canned responses for discrepancy detection
 - **Mock DCA** returns synthetic license data (no Playwright/CAPTCHA)
@@ -119,14 +119,14 @@ flowchart TD
 
 **Real-time SSE streaming** — Frontend receives step-by-step status updates (npi_lookup → license_check → exclusion_check → analyzing → result) via Server-Sent Events.
 
-**Mock mode ships by default** — Full pipeline testable without external dependencies (MockLLMProvider, synthetic DCA data, test LEIE CSV). Toggle to live with `EVERCRED_MOCK_MODE=false`.
+**Mock mode ships by default** — Full pipeline testable without external dependencies (MockLLMProvider, synthetic DCA data, test LEIE CSV). Toggle to live with `CREDENTIALMD_MOCK_MODE=false`.
 
 **Per-verification cost tracking** — Every verification logs LLM token usage, per-step latencies, retry counts, and estimated USD cost. Dashboard aggregates these into operational metrics.
 
 ## Project Structure
 
 ```
-evercred-poc/
+credentialmd-poc/
 ├── README.md
 ├── init.sh                    # Setup and run script
 ├── .env.example               # Environment configuration
@@ -229,7 +229,7 @@ npm run dev
 ### Switching to Live Mode
 ```bash
 # Edit .env
-EVERCRED_MOCK_MODE=false
+CREDENTIALMD_MOCK_MODE=false
 ```
 
 Note: Live mode requires:

@@ -3,7 +3,7 @@ import './globals.css';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
-  title: 'EverCred POC',
+  title: 'CredentialMD',
   description: 'Physician Credentialing Verification Agent',
 };
 
@@ -29,10 +29,10 @@ export default function RootLayout({
               {/* Logo/Brand */}
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-sm">EC</span>
+                  <span className="text-white font-bold text-sm">CM</span>
                 </div>
                 <h1 className="text-xl font-semibold text-slate-800">
-                  EverCred POC
+                  CredentialMD
                 </h1>
               </div>
 

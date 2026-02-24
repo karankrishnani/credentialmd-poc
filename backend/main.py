@@ -1,5 +1,5 @@
 """
-EverCred POC - FastAPI Main Application
+CredentialMD - FastAPI Main Application
 
 Entry point for the FastAPI backend server.
 """
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events.
     """
     # Startup
-    logger.info("Starting EverCred POC...")
+    logger.info("Starting CredentialMD...")
     logger.info("Configuration: %s", get_config_summary())
 
     # Initialize database connection
@@ -37,13 +37,13 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down EverCred POC...")
+    logger.info("Shutting down CredentialMD...")
     db.close_connection()
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="EverCred POC API",
+    title="CredentialMD API",
     description="Physician Credentialing Verification Agent API",
     version="0.1.0",
     lifespan=lifespan,
@@ -66,7 +66,7 @@ app.add_middleware(
 async def root():
     """Root endpoint - returns API info."""
     return {
-        "name": "EverCred POC API",
+        "name": "CredentialMD API",
         "version": "0.1.0",
         "mock_mode": MOCK_MODE,
         "docs_url": "/docs",

@@ -1,5 +1,5 @@
 <project_specification>
-  <project_name>EverCred POC - Physician Credentialing Verification Agent</project_name>
+  <project_name>CredentialMD - Physician Credentialing Verification Agent</project_name>
 
   <overview>
     A LangGraph-based AI agent that automates physician credentialing verification by
@@ -10,7 +10,7 @@
     real-time visibility into verification status, source latency, failure rates, and cost
     per verification.
 
-    This POC targets the Evercred ML Engineer role and demonstrates non-deterministic system
+    This POC demonstrates healthcare credentialing automation through non-deterministic system
     engineering, multi-source orchestration, and human-in-the-loop escalation patterns.
 
     The POC is scoped to California physicians as a proving ground, but the data model and
@@ -286,7 +286,7 @@
       </retry_logic>
 
       <mock_mode>
-        When EVERCRED_MOCK_MODE=true, bypass Playwright entirely.
+        When CREDENTIALMD_MOCK_MODE=true, bypass Playwright entirely.
         Return synthetic DCA results from a dictionary of known test license numbers.
         Mock data must cover all license status types (see mock_data section).
       </mock_mode>
@@ -343,7 +343,7 @@
         Script: backend/scripts/init_db.py
 
         What it does:
-        1. Creates (or recreates) the DuckDB database file at data/evercred.duckdb
+        1. Creates (or recreates) the DuckDB database file at data/credentialmd.duckdb
         2. Loads UPDATED.csv (or UPDATED_test.csv) into the leie table:
            CREATE OR REPLACE TABLE leie AS
              SELECT * FROM read_csv_auto('data/UPDATED.csv');
@@ -442,7 +442,7 @@
     </monitoring_dashboard>
 
     <mock_mode>
-      - Environment variable EVERCRED_MOCK_MODE (default: "true")
+      - Environment variable CREDENTIALMD_MOCK_MODE (default: "true")
       - When true: use MockLLMProvider (canned Claude responses), mock DCA responses
         (no Playwright), and test LEIE CSV with synthetic data
       - When false: use LiveLLMProvider (claude_agent_sdk with Opus), real Playwright
@@ -665,7 +665,7 @@
           with error_type, suggestion, and recoverable flag
       
       - Factory: get_llm_provider()
-        - Checks EVERCRED_MOCK_MODE env var (default: "true")
+        - Checks CREDENTIALMD_MOCK_MODE env var (default: "true")
         - Returns MockLLMProvider or LiveLLMProvider accordingly
 
       Claude is called at exactly ONE point in the workflow:
@@ -874,7 +874,7 @@
   <!-- ============================================================ -->
 
   <database>
-    <engine>DuckDB (in-process, file at data/evercred.duckdb)</engine>
+    <engine>DuckDB (in-process, file at data/credentialmd.duckdb)</engine>
     <init>Created and populated by backend/scripts/init_db.py (NOT at app startup)</init>
 
     <tables>
@@ -989,7 +989,7 @@
   <ui_layout>
     <main_structure>
       Next.js App Router with tabbed navigation. No authentication required (POC scope).
-      - Header: "EverCred POC" branding + tab navigation
+      - Header: "CredentialMD" branding + tab navigation
       - Tabs: Verify | Batch | Dashboard | Review Queue
       - Data fetching: SWR for polling, EventSource for SSE streams
     </main_structure>
@@ -1144,22 +1144,22 @@
   <!-- ============================================================ -->
 
   <project_structure>
-    evercred-poc/
+    credentialmd-poc/
     ├── README.md
-    ├── .env.example                       # EVERCRED_MOCK_MODE=true
+    ├── .env.example                       # CREDENTIALMD_MOCK_MODE=true
     ├── data/
     │   ├── .gitkeep
     │   ├── UPDATED.csv                    # Real OIG LEIE file (gitignored)
     │   ├── UPDATED_test.csv               # Synthetic test LEIE data (committed)
     │   ├── test_physicians.csv            # Sample batch input with 11 test NPIs
-    │   └── evercred.duckdb                # Created by init script (gitignored)
+    │   └── credentialmd.duckdb                # Created by init script (gitignored)
     ├── backend/
     │   ├── pyproject.toml
     │   ├── requirements.txt               # FastAPI, uvicorn, langgraph, httpx, playwright,
     │   │                                  #   duckdb, claude-agent-sdk, python-dotenv
     │   ├── .venv/                         # Virtual environment (gitignored)
     │   ├── main.py                        # FastAPI app entry point, CORS, lifespan
-    │   ├── config.py                      # Env config: EVERCRED_MOCK_MODE, ports, paths
+    │   ├── config.py                      # Env config: CREDENTIALMD_MOCK_MODE, ports, paths
     │   ├── db.py                          # DuckDB connection (reads existing .duckdb file)
     │   ├── scripts/
     │   │   └── init_db.py                 # Standalone: loads LEIE CSV, creates tables
@@ -1235,7 +1235,7 @@
         - Initialize Next.js frontend with Tailwind, Recharts
         - Write data/UPDATED_test.csv with all test LEIE records
         - Write backend/scripts/init_db.py (creates DuckDB, loads CSV, creates tables)
-        - Run init script with --test flag to create data/evercred.duckdb
+        - Run init script with --test flag to create data/credentialmd.duckdb
         - Build LEIE query module (backend/sources/leie.py) with NPI and name+state lookups
         - Build all mock data files:
           - backend/mock/npi_responses.py (11 NPI response dicts)
@@ -1260,7 +1260,7 @@
         - Build LLM provider (backend/llm/provider.py):
           - MockLLMProvider with pattern-matched responses
           - LiveLLMProvider using claude_agent_sdk, Opus model
-          - Factory function with EVERCRED_MOCK_MODE toggle
+          - Factory function with CREDENTIALMD_MOCK_MODE toggle
         - Build shared retry utility (retry_with_backoff)
         - Write unit tests for NPI client, DCA parser, retry logic
       </tasks>
@@ -1306,7 +1306,7 @@
       <title>Live Testing, Polish, and Demo Recording (Day 7)</title>
       <tasks>
         - Karan takes over for live testing (autonomous agent cannot test live mode):
-          - Switch EVERCRED_MOCK_MODE=false
+          - Switch CREDENTIALMD_MOCK_MODE=false
           - Test NPI API with real NPI numbers
           - Test Playwright DCA scraping (assess CAPTCHA behavior)
           - Test LiveLLMProvider with Opus (verify reasoning quality)
@@ -1339,16 +1339,16 @@
       - Mock mode runs entire system with zero external dependencies
     </functionality>
 
-    <evercred_alignment>
+    <project_alignment>
       - Demonstrates non-deterministic reasoning (Claude Opus analyzing discrepancies)
       - Shows multi-source orchestration with parallel execution
       - Implements human-in-the-loop escalation with clear UX and source links
       - Provides operational monitoring (cost, latency, failure rates, retries)
       - Implements retry logic with exponential backoff and graceful degradation
       - Uses healthcare-specific domain knowledge (NPI taxonomies, license verification)
-      - Maps to Evercred Phase 1 deliverables: pipeline, monitoring, cost projection
+      - Demonstrates production-grade healthcare credentialing: pipeline, monitoring, cost projection
       - State-agnostic data model ready for multi-state expansion
-    </evercred_alignment>
+    </project_alignment>
 
     <demo_readiness>
       - 3-minute walkthrough demonstrates the complete verification flow

@@ -1,22 +1,22 @@
-## YOUR ROLE - CODING AGENT FOR EVERCRED POC
+## YOUR ROLE - CODING AGENT FOR CREDENTIALMD
 
-You are continuing work on the **EverCred POC**, a LangGraph-based physician credentialing verification agent with a FastAPI backend and Next.js frontend. This is a FRESH context window and you have no memory of previous sessions.
+You are continuing work on the **CredentialMD**, a LangGraph-based physician credentialing verification agent with a FastAPI backend and Next.js frontend. This is a FRESH context window and you have no memory of previous sessions.
 
 ---
 
 ### PROJECT OVERVIEW
 
-EverCred automates physician credentialing by orchestrating lookups across three public data sources:
+CredentialMD automates physician credentialing by orchestrating lookups across three public data sources:
 
 1. **NPI Registry API** (REST, no auth, lookup by NPI number only)
-2. **California DCA License Search** (Playwright scraper with CAPTCHA handling, mocked when `EVERCRED_MOCK_MODE=true`)
+2. **California DCA License Search** (Playwright scraper with CAPTCHA handling, mocked when `CREDENTIALMD_MOCK_MODE=true`)
 3. **OIG LEIE Exclusion List** (CSV loaded into DuckDB via standalone init script)
 
 The agent cross-references results, detects discrepancies using Claude Opus (the only LLM call in the pipeline), assigns confidence scores, and escalates ambiguous cases to a human reviewer via a LangGraph interrupt. A Next.js dashboard provides real-time visibility into verification status, source latency, failure rates, retries, and cost per verification.
 
 The POC is scoped to California physicians, but the data model uses `target_state` and generic `board_*` field names (not `dca_*`) so the system can expand to other states without structural changes.
 
-**Key constraint:** You are running inside Claude Code in the cloud. The `LiveLLMProvider` depends on `claude_agent_sdk` with local Claude Code credentials (`~/.claude/.credentials.json`), which is NOT available in this environment. **All development and testing MUST use mock mode** (`EVERCRED_MOCK_MODE=true`). Day 7 live testing is handled by Karan manually.
+**Key constraint:** You are running inside Claude Code in the cloud. The `LiveLLMProvider` depends on `claude_agent_sdk` with local Claude Code credentials (`~/.claude/.credentials.json`), which is NOT available in this environment. **All development and testing MUST use mock mode** (`CREDENTIALMD_MOCK_MODE=true`). Day 7 live testing is handled by Karan manually.
 
 ---
 
@@ -78,7 +78,7 @@ playwright install chromium
 python scripts/init_db.py --test
 
 # Set mock mode (REQUIRED in this environment)
-export EVERCRED_MOCK_MODE=true
+export CREDENTIALMD_MOCK_MODE=true
 
 # Start the backend on port 8000
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -86,7 +86,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 Verify the database was initialized:
 ```bash
-python -c "import duckdb; db = duckdb.connect('data/evercred.duckdb', read_only=True); print(db.execute('SELECT COUNT(*) FROM leie').fetchone()); print(db.execute('SHOW TABLES').fetchall())"
+python -c "import duckdb; db = duckdb.connect('data/credentialmd.duckdb', read_only=True); print(db.execute('SELECT COUNT(*) FROM leie').fetchone()); print(db.execute('SHOW TABLES').fetchall())"
 ```
 
 #### Frontend (Next.js 14 App Router)
@@ -108,7 +108,7 @@ curl -s http://localhost:8000/docs | head -5    # FastAPI Swagger UI
 curl -s http://localhost:3000                    # Next.js dev server
 ```
 
-If there is an `init.sh` in the project root, run it instead, but verify it sets `EVERCRED_MOCK_MODE=true` and runs `init_db.py --test`.
+If there is an `init.sh` in the project root, run it instead, but verify it sets `CREDENTIALMD_MOCK_MODE=true` and runs `init_db.py --test`.
 
 ---
 
@@ -418,7 +418,7 @@ After layers 1 and 2 pass individually, test the full flow through the UI and ve
 
 ### MOCK MODE TESTING GUIDELINES
 
-Since all testing runs in mock mode (`EVERCRED_MOCK_MODE=true`), mock data is EXPECTED and CORRECT for this project. The mock providers return realistic, deterministic responses.
+Since all testing runs in mock mode (`CREDENTIALMD_MOCK_MODE=true`), mock data is EXPECTED and CORRECT for this project. The mock providers return realistic, deterministic responses.
 
 **What "mock" means here:**
 - `MockLLMProvider`: Returns canned JSON responses pattern-matched on keywords in the prompt (e.g., "License Revoked" triggers a low confidence response). Lives in `backend/mock/llm_responses.py`.
@@ -548,8 +548,8 @@ Before context fills up:
 3. Mark features as passing if tests verified
 4. Ensure no uncommitted changes
 5. Leave both servers in a working state
-6. Ensure `EVERCRED_MOCK_MODE=true` is set in `.env` or equivalent so the next session starts correctly
-7. Ensure DuckDB has been initialized (`data/evercred.duckdb` exists with test data)
+6. Ensure `CREDENTIALMD_MOCK_MODE=true` is set in `.env` or equivalent so the next session starts correctly
+7. Ensure DuckDB has been initialized (`data/credentialmd.duckdb` exists with test data)
 
 ---
 
@@ -584,7 +584,7 @@ Before context fills up:
 ```
 backend/
   main.py                   # FastAPI app entry point, CORS, lifespan
-  config.py                 # EVERCRED_MOCK_MODE toggle, ports, paths
+  config.py                 # CREDENTIALMD_MOCK_MODE toggle, ports, paths
   db.py                     # DuckDB connection (reads existing .duckdb file)
   scripts/init_db.py        # Standalone: loads LEIE CSV, creates tables, indexes
   llm/provider.py           # LLMProvider ABC, MockLLMProvider, LiveLLMProvider

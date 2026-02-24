@@ -1,4 +1,4 @@
-# EverCred POC - Progress Summary
+# CredentialMD - Progress Summary
 
 ## Current Session Progress
 
@@ -1568,7 +1568,7 @@ This session performed regression testing to verify the project remains in a wor
 
 2. **Feature #31: Header branding visible on all tabs** ✅ PASSING
    - Navigated to each tab in sequence: Verify → Batch → Dashboard → HITL Queue
-   - "EverCred POC" branding visible in header on each tab
+   - "CredentialMD" branding visible in header on each tab
    - Only one tab shows active state at a time
    - Previous tab loses active state on navigation
 
@@ -2824,7 +2824,7 @@ This session performed regression testing to verify the project remains in a wor
 All 112 features are now passing (100% completion).
 
 ### Summary of Application
-EverCred POC is a physician credentialing verification system featuring:
+CredentialMD is a physician credentialing verification system featuring:
 
 1. **Single Verification** - Verify individual physicians by NPI with real-time pipeline visualization
 2. **Batch Verification** - Process up to 20 NPIs at once via text input or CSV upload
@@ -2838,7 +2838,7 @@ EverCred POC is a physician credentialing verification system featuring:
 
 ### Test Coverage
 - 11 test NPIs covering all verification scenarios
-- Mock mode for deterministic testing (EVERCRED_MOCK_MODE=true)
+- Mock mode for deterministic testing (CREDENTIALMD_MOCK_MODE=true)
 - Playwright browser automation for frontend testing
 - curl/API testing for backend verification
 

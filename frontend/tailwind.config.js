@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Custom EverCred color palette
+        // Custom CredentialMD color palette
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

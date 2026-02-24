@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# EverCred POC - Development Environment Setup Script
+# CredentialMD - Development Environment Setup Script
 # This script sets up and runs the complete development environment.
 
 set -e  # Exit on any error
@@ -28,7 +28,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   EverCred POC - Development Setup${NC}"
+echo -e "${BLUE}   CredentialMD - Development Setup${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -126,12 +126,12 @@ if [ ! -f ".env" ]; then
         echo -e "  ${GREEN}Created .env from .env.example${NC}"
     else
         cat > .env << 'EOF'
-# EverCred POC Environment Configuration
+# CredentialMD Environment Configuration
 
 # Mock Mode (default: true)
 # When true: uses mock data providers, no external API calls needed
 # When false: uses live APIs (NPI, DCA Playwright, Claude)
-EVERCRED_MOCK_MODE=true
+CREDENTIALMD_MOCK_MODE=true
 
 # Backend Configuration
 BACKEND_HOST=0.0.0.0
@@ -141,7 +141,7 @@ BACKEND_PORT=8000
 FRONTEND_PORT=3000
 
 # Database path (relative to backend/)
-DUCKDB_PATH=../data/evercred.duckdb
+DUCKDB_PATH=../data/credentialmd.duckdb
 
 # LEIE CSV path (relative to backend/)
 # Use UPDATED_test.csv for mock mode, UPDATED.csv for live mode
@@ -173,7 +173,7 @@ echo ""
 
 source "$SCRIPT_DIR/.env" 2>/dev/null || true
 
-if [ "$EVERCRED_MOCK_MODE" = "true" ] || [ -z "$EVERCRED_MOCK_MODE" ]; then
+if [ "$CREDENTIALMD_MOCK_MODE" = "true" ] || [ -z "$CREDENTIALMD_MOCK_MODE" ]; then
     echo -e "  Mode: ${GREEN}MOCK MODE (default)${NC}"
     echo -e "  - Using synthetic NPI responses"
     echo -e "  - Using mock DCA responses (no Playwright)"

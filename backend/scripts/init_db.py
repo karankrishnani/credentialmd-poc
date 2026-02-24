@@ -137,7 +137,7 @@ def init_database(csv_path: Path, db_path: Path, verbose: bool = True):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Initialize EverCred POC database"
+        description="Initialize CredentialMD database"
     )
     parser.add_argument(
         "--test",
@@ -178,7 +178,7 @@ def main():
     if args.db:
         db_path = Path(args.db)
     else:
-        db_path = data_dir / "evercred.duckdb"
+        db_path = data_dir / "credentialmd.duckdb"
 
     # Initialize
     try:

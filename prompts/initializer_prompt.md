@@ -20,7 +20,7 @@ verification agent. It is NOT a generic CRUD app. Key characteristics:
   physicians across three data sources (NPI, CA DCA, LEIE).
 - **Four UI tabs.** Verify, Batch, Dashboard, HITL Queue. That is the entire
   frontend surface area.
-- **Mock mode is the default.** The app ships with `EVERCRED_MOCK_MODE=true`
+- **Mock mode is the default.** The app ships with `CREDENTIALMD_MOCK_MODE=true`
   and must be fully functional and demo-ready using only mock/synthetic data.
 
 ---
@@ -146,7 +146,7 @@ This is the MOST IMPORTANT category. Test every path through the LangGraph workf
 - Direct URL to each tab loads correctly (deep linking)
 - Non-existent route shows 404 page, not a crash
 - Tab active state indicator matches current view
-- Header branding "EverCred POC" is visible on all tabs
+- Header branding "CredentialMD" is visible on all tabs
 - Links to external data sources (NPI search URL, DCA search URL) open in new tab
 
 ### C. Real Data Verification (12-15 tests)
@@ -226,7 +226,7 @@ These tests ensure the pipeline produces real, persisted data, not hardcoded stu
 
 ### I. Mock Mode Behavior (4-6 tests)
 
-- App starts successfully with EVERCRED_MOCK_MODE=true
+- App starts successfully with CREDENTIALMD_MOCK_MODE=true
 - MockLLMProvider returns structured, realistic responses (not empty or error)
 - Mock DCA responses include all expected fields (license status, expiration, name)
 - Mock LEIE data loaded from data/UPDATED_test.csv into DuckDB at startup
@@ -272,9 +272,9 @@ These tests ensure the pipeline produces real, persisted data, not hardcoded stu
 ## MOCK MODE STRATEGY
 
 This POC uses a deliberate mock mode pattern. The app MUST work in two modes
-controlled by the `EVERCRED_MOCK_MODE` environment variable (default: `"true"`).
+controlled by the `CREDENTIALMD_MOCK_MODE` environment variable (default: `"true"`).
 
-### Mock mode (EVERCRED_MOCK_MODE=true, the default):
+### Mock mode (CREDENTIALMD_MOCK_MODE=true, the default):
 - `MockLLMProvider` returns canned but realistic Claude responses for
   discrepancy detection and confidence scoring
 - CA DCA module (`ca_dca_mock.py`) returns synthetic license data for known
@@ -285,7 +285,7 @@ controlled by the `EVERCRED_MOCK_MODE` environment variable (default: `"true"`).
 - All mock responses must be structurally identical to what live responses
   would look like
 
-### Live mode (EVERCRED_MOCK_MODE=false):
+### Live mode (CREDENTIALMD_MOCK_MODE=false):
 - `LiveLLMProvider` calls Claude via `claude_agent_sdk`
 - DCA uses Playwright scraper (best-effort, CAPTCHA may block)
 - LEIE uses production `UPDATED.csv`
@@ -986,7 +986,7 @@ set up and run the development environment. The script should:
 4. Install Node.js dependencies for the React frontend (`npm install` in
    `frontend/` directory)
 5. Copy `.env.example` to `.env` if it does not exist (setting
-   `EVERCRED_MOCK_MODE=true` as default)
+   `CREDENTIALMD_MOCK_MODE=true` as default)
 6. Load the test LEIE CSV into DuckDB (or note that this happens at app startup)
 7. Start both the FastAPI backend (port 8000) and Vite dev server (port 5173)
 8. Print URLs for both services and confirm mock mode is active
@@ -1002,7 +1002,7 @@ Create a git repository and make your first commit with:
 - init.sh (environment setup script)
 - All seed data files (data/*.csv, backend mock data modules)
 - README.md (project overview, setup instructions, mock mode explanation)
-- .env.example (with EVERCRED_MOCK_MODE=true)
+- .env.example (with CREDENTIALMD_MOCK_MODE=true)
 - Any initial project structure files
 
 Note: Features are stored in the SQLite database (features.db), not in a JSON file.
@@ -1017,7 +1017,7 @@ Set up the basic project structure based on what is specified in `app_spec.txt`.
 This includes:
 
 ```
-evercred-poc/
+credentialmd-poc/
 ├── README.md
 ├── .env.example
 ├── init.sh
