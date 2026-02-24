@@ -247,6 +247,7 @@ async def run_verification_streaming(
     npi: str,
     target_state: str = "CA",
     batch_id: Optional[str] = None,
+    verification_id: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Run verification with streaming updates.
@@ -257,12 +258,14 @@ async def run_verification_streaming(
         npi: The 10-digit NPI number
         target_state: Target state for license verification
         batch_id: Optional batch ID for bulk verifications
+        verification_id: Optional verification ID (generates one if not provided)
 
     Yields:
         Status update dicts with step, status, and data
     """
     # Create initial state
-    verification_id = str(uuid.uuid4())
+    if verification_id is None:
+        verification_id = str(uuid.uuid4())
     logger.info("[WORKFLOW] Starting streaming verification: id=%s NPI=%s", verification_id, npi)
     state = create_initial_state(
         npi_number=npi,

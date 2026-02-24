@@ -4,6 +4,7 @@ FastAPI Route Definitions
 API endpoints for verification, batch processing, metrics, and HITL.
 """
 
+import json
 import logging
 import re
 import uuid
@@ -126,20 +127,42 @@ async def start_verification(request: VerifyRequest, background_tasks: Backgroun
     )
     _verifications[verification_id] = dict(initial_state)
 
-    # Run verification in background
+    # Run verification in background using streaming for intermediate updates
+    # astream yields events AFTER a node completes, so map to the next step
+    NEXT_STEP = {
+        "npi_lookup": "parallel_lookups",
+        "parallel_lookups": "discrepancy_detection",
+        "discrepancy_detection": "route_decision_node",
+        "route_decision_node": "finalize",
+        "finalize": "complete",
+    }
+
     async def run_and_store():
         import traceback as tb
         try:
-            result = await run_verification(
+            async for event in run_verification_streaming(
                 npi=request.npi,
                 target_state="CA",
                 verification_id=verification_id,
-            )
-            _verifications[verification_id] = result
-            store_verification(result)
+            ):
+                step = event.get("step", "")
+                if step == "complete":
+                    # Store full final state
+                    _verifications[verification_id] = event.get("data", {})
+                    _verifications[verification_id]["current_step"] = "complete"
+                    store_verification(_verifications[verification_id])
+                elif step != "start":
+                    # Map completed node to next active step
+                    next_step = NEXT_STEP.get(step, step)
+                    _verifications[verification_id]["current_step"] = next_step
+                    event_data = event.get("data", {})
+                    for k, v in event_data.items():
+                        if v is not None:
+                            _verifications[verification_id][k] = v
         except Exception as e:
             # Update the state with error and full traceback
             _verifications[verification_id]["verification_status"] = "failed"
+            _verifications[verification_id]["current_step"] = "complete"
             errors = _verifications[verification_id].get("errors", [])
             errors.append(f"Exception: {repr(e)}")
             errors.append(f"Full traceback: {tb.format_exc()}")
@@ -189,47 +212,46 @@ async def stream_verification(verification_id: str):
     async def event_generator():
         # Yield current state immediately
         yield {
-            "event": "status",
-            "data": {
-                "step": "current",
+            "data": json.dumps({
+                "step": "start",
                 "status": state.get("verification_status", "pending"),
                 "verification_id": verification_id,
-                "data": state_to_dict(state),
-            }
+            }),
         }
 
-        # Poll for updates
-        last_status = state.get("verification_status", "pending")
-        max_polls = 60  # 1 minute max
+        # Poll for step changes
+        last_step = None
+        max_polls = 120  # 60 seconds at 0.5s interval
 
         for _ in range(max_polls):
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
             current_state = _verifications.get(verification_id)
             if not current_state:
                 break
 
-            current_status = current_state.get("verification_status", "pending")
-            if current_status != last_status:
-                last_status = current_status
-                yield {
-                    "event": "status",
-                    "data": {
-                        "step": "update",
-                        "status": current_status,
-                        "verification_id": verification_id,
-                        "data": state_to_dict(current_state),
-                    }
-                }
+            current_step = current_state.get("current_step")
 
             # Check if complete
-            if current_status in ["verified", "failed", "flagged", "escalated"]:
-                if current_state.get("completed_at"):
-                    yield {
-                        "event": "complete",
+            if current_step == "complete":
+                yield {
+                    "data": json.dumps({
+                        "step": "complete",
                         "data": state_to_dict(current_state),
-                    }
-                    break
+                    }),
+                }
+                break
+
+            # Send update when step changes
+            if current_step and current_step != last_step:
+                last_step = current_step
+                yield {
+                    "data": json.dumps({
+                        "step": current_step,
+                        "status": current_state.get("verification_status", "processing"),
+                        "verification_id": verification_id,
+                    }),
+                }
 
     return EventSourceResponse(event_generator())
 
