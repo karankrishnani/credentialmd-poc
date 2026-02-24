@@ -4,11 +4,14 @@ FastAPI Route Definitions
 API endpoints for verification, batch processing, metrics, and HITL.
 """
 
+import logging
 import re
 import uuid
 import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse, Response
@@ -114,6 +117,7 @@ async def start_verification(request: VerifyRequest, background_tasks: Backgroun
     Response: { "verification_id": "uuid", "status": "processing" }
     """
     verification_id = str(uuid.uuid4())
+    logger.info("API: Starting verification id=%s NPI=%s", verification_id, request.npi)
 
     # Create initial state for tracking
     initial_state = create_initial_state(
@@ -140,7 +144,7 @@ async def start_verification(request: VerifyRequest, background_tasks: Backgroun
             errors.append(f"Exception: {repr(e)}")
             errors.append(f"Full traceback: {tb.format_exc()}")
             _verifications[verification_id]["errors"] = errors
-            print(f"ERROR in run_and_store: {tb.format_exc()}")
+            logger.error("API: Verification failed id=%s: %s", verification_id, repr(e), exc_info=True)
 
     background_tasks.add_task(run_and_store)
 
@@ -253,6 +257,7 @@ async def submit_review(verification_id: str, request: ReviewRequest):
             detail="Verification is not pending human review"
         )
 
+    logger.info("API: Review submitted for id=%s decision=%s", verification_id, request.decision)
     # Update state with human decision
     state["human_decision"] = request.decision
     state["human_notes"] = request.notes
@@ -294,6 +299,7 @@ async def _run_batch_internal(npis: List[str], background_tasks: BackgroundTasks
     """Internal function to create and run a batch."""
     # Create batch
     batch_id = str(uuid.uuid4())
+    logger.info("API: Creating batch id=%s npis=%d", batch_id, len(npis))
     _batches[batch_id] = {
         "npis": npis,
         "results": [],

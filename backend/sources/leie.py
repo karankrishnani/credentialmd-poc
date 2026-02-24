@@ -7,11 +7,14 @@ stored in DuckDB.
 The LEIE database is loaded by scripts/init_db.py from the OIG CSV file.
 """
 
+import logging
 import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
 import db
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,11 +58,13 @@ def lookup_leie(
     """
     start_time = time.time()
     result = LEIELookupResult()
+    logger.info("LEIE: Checking exclusion for NPI=%s name=%s,%s state=%s", npi, last_name, first_name, state)
 
     # Primary lookup: by NPI
     npi_match = db.check_leie_by_npi(npi)
 
     if npi_match:
+        logger.warning("LEIE: NPI match found for NPI=%s", npi)
         result.leie_match = True
         result.match_type = "npi"
         result.leie_record = npi_match
@@ -67,11 +72,15 @@ def lookup_leie(
         result.latency_ms = int((time.time() - start_time) * 1000)
         return result
 
+    logger.debug("LEIE: No NPI match, attempting name fallback")
+
     # Fallback lookup: by name + state
     if first_name and last_name:
+        logger.debug("LEIE: Name fallback: last=%s first=%s state=%s", last_name, first_name, state)
         name_match = db.check_leie_by_name(last_name, first_name, state)
 
         if name_match:
+            logger.warning("LEIE: Name match found for %s, %s (state=%s)", last_name, first_name, state)
             result.leie_match = True
             result.match_type = "name"
             result.leie_record = name_match
@@ -80,10 +89,14 @@ def lookup_leie(
             # Check for multiple name matches (potential ambiguity)
             all_name_matches = _check_multiple_name_matches(last_name, first_name, state)
             if len(all_name_matches) > 1:
+                logger.warning("LEIE: Multiple name matches (%d) for %s, %s — potential ambiguity",
+                                len(all_name_matches), last_name, first_name)
                 result.multiple_matches = True
                 result.match_count = len(all_name_matches)
 
     result.latency_ms = int((time.time() - start_time) * 1000)
+    logger.info("LEIE: Completed: match=%s type=%s latency=%dms",
+                 result.leie_match, result.match_type, result.latency_ms)
     return result
 
 
@@ -105,6 +118,7 @@ def _check_multiple_name_matches(
     Returns:
         List of all matching LEIE records
     """
+    logger.debug("LEIE: Checking multiple name matches: last=%s first=%s state=%s", last_name, first_name, state)
     conn = db.get_connection()
     results = conn.execute(
         """
@@ -120,7 +134,9 @@ def _check_multiple_name_matches(
         return []
 
     columns = [desc[0] for desc in conn.description]
-    return [dict(zip(columns, row)) for row in results]
+    matches = [dict(zip(columns, row)) for row in results]
+    logger.debug("LEIE: Multiple name matches result: count=%d", len(matches))
+    return matches
 
 
 def is_excluded(leie_result: LEIELookupResult) -> bool:

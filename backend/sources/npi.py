@@ -9,11 +9,14 @@ API Endpoint: https://npiregistry.cms.hhs.gov/api/?version=2.1&number={npi}
 """
 
 import asyncio
+import logging
 import time
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from config import (
     NPI_API_BASE_URL,
@@ -118,6 +121,7 @@ async def lookup_npi(
     """
     start_time = time.time()
     retry_count = 0
+    logger.info("NPI: Looking up NPI=%s state=%s mock=%s", npi, target_state, MOCK_MODE)
 
     # Validate NPI format
     if not npi or not npi.isdigit() or len(npi) != 10:
@@ -135,6 +139,11 @@ async def lookup_npi(
     result = _parse_npi_response(raw_response, npi, target_state)
     result.latency_ms = latency_ms
     result.retry_count = retry_count
+
+    logger.info("NPI: Result for NPI=%s: found=%s active=%s name=%s license=%s",
+                 npi, result.npi_found, result.npi_active, result.provider_name, result.license_number)
+    if result.needs_hitl:
+        logger.warning("NPI: HITL escalation for NPI=%s: %s", npi, result.hitl_reason)
 
     return result
 
@@ -168,7 +177,8 @@ async def _fetch_npi_with_retry(npi: str) -> Tuple[Dict[str, Any], int]:
                 if response.status_code == 429:
                     if attempt < MAX_RETRIES:
                         retry_count += 1
-                        print(f"NPI API rate limited. Waiting {RATE_LIMIT_RETRY_DELAY}s before retry {attempt + 1}/{MAX_RETRIES}")
+                        logger.warning("NPI: API rate limited. Waiting %ss before retry %d/%d",
+                                        RATE_LIMIT_RETRY_DELAY, attempt + 1, MAX_RETRIES)
                         await asyncio.sleep(RATE_LIMIT_RETRY_DELAY)
                         continue
 
@@ -181,7 +191,8 @@ async def _fetch_npi_with_retry(npi: str) -> Tuple[Dict[str, Any], int]:
                     if attempt < MAX_RETRIES:
                         retry_count += 1
                         delay = BASE_RETRY_DELAY * (2 ** attempt)  # 1s, 2s, 4s, 8s
-                        print(f"NPI API error {response.status_code}. Retry {attempt + 1}/{MAX_RETRIES} in {delay}s")
+                        logger.warning("NPI: API error %d. Retry %d/%d in %ss",
+                                        response.status_code, attempt + 1, MAX_RETRIES, delay)
                         await asyncio.sleep(delay)
                         continue
 
@@ -189,7 +200,7 @@ async def _fetch_npi_with_retry(npi: str) -> Tuple[Dict[str, Any], int]:
                 if attempt < MAX_RETRIES:
                     retry_count += 1
                     delay = BASE_RETRY_DELAY * (2 ** attempt)
-                    print(f"NPI API timeout. Retry {attempt + 1}/{MAX_RETRIES} in {delay}s")
+                    logger.warning("NPI: API timeout. Retry %d/%d in %ss", attempt + 1, MAX_RETRIES, delay)
                     await asyncio.sleep(delay)
                     continue
 
@@ -197,7 +208,7 @@ async def _fetch_npi_with_retry(npi: str) -> Tuple[Dict[str, Any], int]:
                 if attempt < MAX_RETRIES:
                     retry_count += 1
                     delay = BASE_RETRY_DELAY * (2 ** attempt)
-                    print(f"NPI API request error: {e}. Retry {attempt + 1}/{MAX_RETRIES} in {delay}s")
+                    logger.warning("NPI: API request error: %s. Retry %d/%d in %ss", e, attempt + 1, MAX_RETRIES, delay)
                     await asyncio.sleep(delay)
                     continue
 
@@ -227,6 +238,7 @@ def _parse_npi_response(
 
     # Check if NPI was found
     result_count = response.get("result_count", 0)
+    logger.debug("NPI: Parsing response for NPI=%s result_count=%d", npi, result_count)
     if result_count == 0 or not response.get("results"):
         result.npi_found = False
         result.needs_hitl = True
@@ -251,6 +263,7 @@ def _parse_npi_response(
     first_name = basic.get("first_name", "").strip()
     last_name = basic.get("last_name", "").strip()
     middle_name = basic.get("middle_name", "").strip()
+    logger.debug("NPI: Name extraction: first=%s last=%s middle=%s", first_name, last_name, middle_name)
 
     result.provider_first_name = first_name
     result.provider_last_name = last_name
@@ -278,6 +291,8 @@ def _parse_npi_response(
         t for t in result.all_taxonomies
         if t.get("state", "").upper() == target_state.upper()
     ]
+    logger.debug("NPI: Taxonomy filtering: total=%d state_%s=%d",
+                  len(result.all_taxonomies), target_state, len(state_taxonomies))
 
     # Case 1: No taxonomies for target state
     if not state_taxonomies:

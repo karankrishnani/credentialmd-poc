@@ -78,13 +78,15 @@ async def lookup_dca_license(
     result = DCALookupResult()
 
     if MOCK_MODE:
-        # Use mock data
+        logger.info("DCA: Mock lookup for license=%s", license_number)
         result = await _mock_lookup(license_number)
     else:
         # Use real Playwright scraping
         result = await _playwright_lookup(license_number)
 
     result.latency_ms = int((time.time() - start_time) * 1000)
+    logger.info("DCA: Completed: license=%s found=%s status=%s latency=%dms",
+                 license_number, result.license_found, result.license_status, result.latency_ms)
     return result
 
 
@@ -104,12 +106,14 @@ async def _mock_lookup(license_number: str) -> DCALookupResult:
         mock_data = get_mock_dca_response(license_number)
 
         if mock_data is None:
-            # License not found in mock data
+            logger.info("DCA: Mock data not found for license=%s", license_number)
             result.license_found = False
             result.source_available = True
             return result
 
         # Parse mock data
+        logger.info("DCA: Mock data found for license=%s status=%s",
+                     license_number, mock_data.get("license_status"))
         result.license_found = True
         result.source_available = True
         result.raw_response = mock_data
@@ -257,7 +261,7 @@ async def _playwright_lookup(license_number: str) -> DCALookupResult:
                 retry_count += 1
                 delay = BASE_RETRY_DELAY * (2 ** attempt)
                 logger.info("DCA: Retry %s/%s in %ss", attempt + 1, DCA_MAX_RETRIES, delay)
-                print(f"DCA scraper error: {e}. Retry {attempt + 1}/{DCA_MAX_RETRIES} in {delay}s")
+                logger.warning("DCA: Scraper error: %s. Retry %d/%d in %ss", e, attempt + 1, DCA_MAX_RETRIES, delay)
                 await asyncio.sleep(delay)
                 continue
             else:
@@ -346,7 +350,7 @@ async def _parse_dca_result(page, article) -> DCALookupResult:
         }
 
     except Exception as e:
-        print(f"Error parsing DCA result: {e}")
+        logger.error("DCA: Error parsing result: %s", e, exc_info=True)
         result.error_message = str(e)
 
     return result

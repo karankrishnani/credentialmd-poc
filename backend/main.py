@@ -7,11 +7,16 @@ Entry point for the FastAPI backend server.
 import logging
 from contextlib import asynccontextmanager
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+from config import BACKEND_HOST, BACKEND_PORT, MOCK_MODE, LOG_LEVEL, get_config_summary
+
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from config import BACKEND_HOST, BACKEND_PORT, MOCK_MODE, get_config_summary
 import db
 
 
@@ -23,8 +28,8 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events.
     """
     # Startup
-    print("Starting EverCred POC...")
-    print(f"Configuration: {get_config_summary()}")
+    logger.info("Starting EverCred POC...")
+    logger.info("Configuration: %s", get_config_summary())
 
     # Initialize database connection
     db.get_connection()
@@ -32,7 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    print("Shutting down EverCred POC...")
+    logger.info("Shutting down EverCred POC...")
     db.close_connection()
 
 

@@ -5,11 +5,14 @@ Provides an abstract base class and implementations for mock/live LLM access.
 The factory function returns the appropriate provider based on EVERCRED_MOCK_MODE.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 import json
 
 from config import MOCK_MODE, LLM_MODEL
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(ABC):
@@ -64,6 +67,8 @@ class MockLLMProvider(LLMProvider):
         import asyncio
         import random
 
+        logger.info("LLM: Mock query: prompt_len=%d system_len=%d", len(prompt), len(system))
+
         # Simulate realistic latency (100-300ms)
         await asyncio.sleep(random.uniform(0.1, 0.3))
 
@@ -71,7 +76,10 @@ class MockLLMProvider(LLMProvider):
         tokens = self._estimate_tokens(prompt, system)
         self.total_tokens_used += tokens
 
-        return self._get_response(prompt, system)
+        response = self._get_response(prompt, system)
+        logger.info("LLM: Mock response: tokens=%d length=%d", tokens, len(response))
+        logger.debug("LLM: Mock response preview: %.200s", response)
+        return response
 
     def get_tokens_used(self) -> int:
         """Get total tokens used in this session."""
@@ -105,8 +113,6 @@ class LiveLLMProvider(LLMProvider):
         Returns:
             The LLM's response as a string
         """
-        import logging
-
         from claude_agent_sdk import (
             query as sdk_query,
             ClaudeAgentOptions,
@@ -116,8 +122,10 @@ class LiveLLMProvider(LLMProvider):
         )
         from claude_agent_sdk._errors import ProcessError
 
+        logger.info("LLM: Live query: model=%s prompt_len=%d system_len=%d", self.model, len(prompt), len(system))
+
         def stderr_cb(line: str) -> None:
-            logging.getLogger("llm.provider").warning(f"[Claude CLI stderr] {line}")
+            logger.warning("[Claude CLI stderr] %s", line)
 
         options = ClaudeAgentOptions(
             system_prompt=system,
@@ -136,20 +144,19 @@ class LiveLLMProvider(LLMProvider):
                 elif isinstance(message, ResultMessage):
                     if getattr(message, "is_error", False):
                         err_msg = getattr(message, "result", None) or "".join(chunks)
-                        logging.getLogger("llm.provider").error(
-                            f"[Claude CLI error] {err_msg}"
-                        )
+                        logger.error("[Claude CLI error] %s", err_msg)
         except ProcessError as e:
             actual = "".join(chunks).strip() if chunks else None
             if actual:
-                log = logging.getLogger("llm.provider")
-                log.error(f"[Claude CLI exit {e.exit_code}] {actual}")
+                logger.error("[Claude CLI exit %d] %s", e.exit_code, actual)
                 raise RuntimeError(f"Claude CLI failed: {actual}") from e
             raise
         response_text = "".join(chunks)
         input_approx = len(prompt) // 4 + len(system) // 4
         output_approx = len(response_text) // 4
         self.total_tokens_used += input_approx + output_approx
+        logger.info("LLM: Live response: tokens=%d length=%d", input_approx + output_approx, len(response_text))
+        logger.debug("LLM: Live response preview: %.200s", response_text)
         return response_text
 
     def get_tokens_used(self) -> int:
@@ -181,6 +188,8 @@ def get_llm_provider() -> LLMProvider:
         MockLLMProvider if MOCK_MODE is True, else LiveLLMProvider
     """
     if MOCK_MODE:
+        logger.info("LLM: Using MockLLMProvider")
         return MockLLMProvider()
     else:
+        logger.info("LLM: Using LiveLLMProvider (model=%s)", LLM_MODEL)
         return LiveLLMProvider()

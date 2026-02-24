@@ -14,10 +14,13 @@ human_review -> finalize
 finalize -> END
 """
 
+import logging
 import uuid
 import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional, AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 from langgraph.graph import StateGraph, END
 
@@ -102,11 +105,13 @@ async def _parallel_lookups(state: VerificationState) -> Dict[str, Any]:
     Returns:
         Merged updates from both lookups
     """
+    logger.info("[WORKFLOW] Starting parallel lookups (board + LEIE)")
     # Run both lookups concurrently
     board_result, leie_result = await asyncio.gather(
         board_lookup(state),
         leie_lookup(state),
     )
+    logger.info("[WORKFLOW] Parallel lookups completed")
 
     # Merge results - combine step_latencies and other fields
     merged = {}
@@ -150,12 +155,15 @@ def _should_proceed_after_npi(state: VerificationState) -> str:
     """
     # If HITL already triggered by NPI lookup, go to review
     if state.get("needs_human_review", False):
+        logger.info("[WORKFLOW] Post-NPI routing: review (HITL triggered)")
         return "review"
 
     # If no license found, can't proceed with DCA lookup
     if not state.get("license_number"):
+        logger.info("[WORKFLOW] Post-NPI routing: review (no license number)")
         return "review"
 
+    logger.info("[WORKFLOW] Post-NPI routing: proceed to parallel lookups")
     return "proceed"
 
 
@@ -169,7 +177,9 @@ def _get_route_decision(state: VerificationState) -> str:
     Returns:
         Route decision: "verify", "flag", "fail", or "review"
     """
-    return route_decision(state)
+    decision = route_decision(state)
+    logger.info("[WORKFLOW] Route decision: %s", decision)
+    return decision
 
 
 # Global compiled workflow
@@ -185,6 +195,7 @@ def get_workflow():
     """
     global _compiled_workflow
     if _compiled_workflow is None:
+        logger.info("[WORKFLOW] Compiling verification graph")
         workflow = create_workflow_graph()
         _compiled_workflow = workflow.compile()
     return _compiled_workflow
@@ -211,6 +222,8 @@ async def run_verification(
     # Create initial state
     if verification_id is None:
         verification_id = str(uuid.uuid4())
+    logger.info("[WORKFLOW] Starting verification: id=%s NPI=%s state=%s batch_id=%s",
+                 verification_id, npi, target_state, batch_id)
     state = create_initial_state(
         npi_number=npi,
         target_state=target_state,
@@ -224,6 +237,9 @@ async def run_verification(
     # Run the workflow
     result = await workflow.ainvoke(state)
 
+    logger.info("[WORKFLOW] Verification complete: id=%s status=%s confidence=%s latencies=%s",
+                 verification_id, result.get("verification_status"),
+                 result.get("confidence_score"), result.get("step_latencies"))
     return result
 
 
@@ -247,6 +263,7 @@ async def run_verification_streaming(
     """
     # Create initial state
     verification_id = str(uuid.uuid4())
+    logger.info("[WORKFLOW] Starting streaming verification: id=%s NPI=%s", verification_id, npi)
     state = create_initial_state(
         npi_number=npi,
         target_state=target_state,
@@ -276,6 +293,8 @@ async def run_verification_streaming(
                     # Merge updates into final_state
                     final_state = {**final_state, **node_output}
 
+                    logger.debug("[WORKFLOW] Stream event: node=%s status=%s",
+                                 node_name, final_state.get("verification_status", "processing"))
                     yield {
                         "step": node_name,
                         "status": final_state.get("verification_status", "processing"),
