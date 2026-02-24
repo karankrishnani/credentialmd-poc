@@ -2,6 +2,63 @@
 
 ## Current Session Progress
 
+### Date: Session 6 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 6 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #67: GET /api/verify/{id} returns current state** ✅ PASSING
+   - Started verification via POST /api/verify with NPI 1003127655
+   - Called GET /api/verify/{id} and verified response contains:
+     - verification_status: "verified"
+     - confidence_score: 97
+     - All collected data fields (npi_found, license_number, etc.)
+     - step_latencies: {npi_ms: 0, dca_ms: 0, leie_ms: 1, llm_ms: 219}
+   - Final status correctly reflected after completion
+
+2. **Feature #16: Route decision maps low score to human review** ✅ PASSING
+   - Verified NPI 4444444444 (LOWCONFIDENCE, ANNA M)
+   - Confidence score: 60 (< 70 threshold)
+   - Status: escalated
+   - needs_human_review: true
+   - human_review_reason: "Low confidence score (60)"
+   - Discrepancies detected: "License shows secondary status of Probation"
+   - Physician appears in HITL Queue with all details and action buttons
+
+3. **Feature #9: LEIE lookup by name when NPI blank** ✅ PASSING
+   - Verified NPI 1234560001 (MARIA NOPI-EXCLUD)
+   - leie_match: true - LEIE match found via name+state fallback
+   - LEIE record shows NPI field is null, matched by name "NOPI-EXCLUD, MARIA"
+   - Status: failed (automatic failure due to LEIE exclusion)
+   - Confidence: 0
+   - Discrepancy: "LEIE Exclusion: NOPI-EXCLUD, MARIA excluded on 20180101"
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 116 verification records (4 new from this session)
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Metrics from Dashboard:
+- Total Verifications: 116
+- Avg Cost: $0.02 per verification
+- Avg Latency: 196ms total pipeline
+- Outcome Distribution: Verified 40, Flagged 25, Failed 17, Escalated 34
+
+#### Screenshots Captured:
+- regression-verify-page.png - Verify tab UI
+- regression-dashboard-session6.png - Dashboard with updated metrics
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 5 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
