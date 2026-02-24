@@ -1,127 +1,101 @@
-# EverCred POC - Session 1 Progress Summary
+# EverCred POC - Progress Summary
 
-## Date: Session 1 (Initializer Agent)
+## Current Session Progress
 
-## Accomplishments
+### Date: Session 2 (Coding Agent)
 
-### 1. Feature Creation (COMPLETED)
-Created 112 comprehensive features in the features.db SQLite database covering:
+### Features Status: 91/112 passing (81.2%)
 
-| Category | Count | Description |
-|----------|-------|-------------|
-| Verification Pipeline | 24 | LangGraph workflow, source lookups, routing logic |
-| Navigation & Tabs | 8 | Four tabs, routing, 404 handling |
-| Real Data Verification | 12 | Data persistence, dashboard accuracy |
-| HITL Workflow | 10 | Escalation triggers, approve/reject flow |
-| Error Handling | 7 | Bad input, API errors, validation |
-| UI-Backend Integration | 10 | SSE streaming, API contracts |
-| Batch Processing | 8 | CSV upload, sequential processing |
-| Dashboard & Metrics | 7 | Charts, metric cards, real-time updates |
-| Mock Mode Behavior | 6 | Mock providers, synthetic data |
-| Feedback & Indicators | 7 | Spinners, badges, status colors |
-| Form Validation | 4 | NPI format, empty fields |
-| Responsive Layout | 5 | Desktop/tablet layouts |
-| Performance | 4 | Timing requirements |
+### Accomplishments This Session
 
-### 2. Seed Data Files (COMPLETED)
-Created essential test data files:
+#### 1. Feature #72: CSV Upload Shows Physician Count (COMPLETED)
+- Implemented full CSV upload functionality with drag-and-drop support
+- Added CSV parsing to extract valid 10-digit NPIs from 'npi' column
+- Displays "X physicians found" after successful upload
+- Green success styling with checkmark icon
+- "Verify X Physicians" button for batch processing
+- "Remove file" button to clear uploaded CSV
+- Tested via Playwright browser automation
+- **Marked as passing**
 
-- `data/UPDATED_test.csv`: Synthetic LEIE exclusion list with 10 records
-  - Includes NPI-based exclusion (ROBERT EXCLUDED, NPI 1234567001)
-  - Includes name-only exclusion (MARIA NOPI-EXCLUD, no NPI)
-  - Includes out-of-state record (Texas physician)
-  - Includes reinstated edge case
+#### 2. Fixed Verification Workflow Parameter Issue (CODE FIXED, SERVER RESTART NEEDED)
+- Modified `run_verification()` in `workflow.py` to accept optional `verification_id` parameter
+- Updated `routes.py` to pass the verification_id from the route handler
+- Added improved error handling with traceback logging
+- The code fix is complete but the running servers (started without --reload) have old code
+- **Server restart required to apply fix**
 
-- `data/test_physicians.csv`: 10 test physicians with expected outcomes
-  - 3 clean verifications (verified)
-  - 3 LEIE exclusions (failed)
-  - 2 HITL escalations (no CA license, low confidence)
-  - 2 flagged cases (name mismatch, expired license)
+### Issues Discovered
 
-### 3. Mock Data Modules (COMPLETED)
-Created comprehensive mock providers:
+1. **DuckDB Lock Conflict**: The running server holds a lock on `evercred.duckdb`, preventing concurrent access during testing. This causes LEIE lookup and database write errors.
 
-- `backend/sources/npi_mock_data.py`: Full NPI API response structures for all 10 test NPIs
-  - Matches exact real NPI Registry API format
-  - Includes addresses, taxonomies, basic info
+2. **Server Not Auto-Reloading**: Backend servers were started without `--reload` flag:
+   - Port 8000: PID 74496, started at 11:56PM
+   - Port 8001: PID 93379, started at 12:06AM
+   - Code changes don't take effect until server restart
 
-- `backend/sources/dca_mock_data.py`: Mock CA DCA license responses
-  - Matches real DCA DOM structure
-  - Covers all license statuses (Active, Revoked, Delinquent)
-  - Includes disciplinary action flags
+3. **Old Batch API Code**: The running server has old batch API code that returns "Either 'npis' in body or CSV file required" error, which doesn't exist in the current codebase.
 
-- `backend/llm/mock_responses.py`: Pattern-matched LLM responses
-  - Canned responses for all discrepancy scenarios
-  - Token estimation for cost metrics
-  - Simulated latency
+### Test NPIs Verified This Session
+- CSV upload tested with 5 NPIs (1003127655, 1588667638, 1497758544, 1111111111, 2222222222)
+- Backend workflow tested directly via Python (bypassing API) - works correctly
 
-### 4. Project Structure (COMPLETED)
-Created complete project scaffolding:
+### Files Modified
+- `backend/graph/workflow.py` - Added optional verification_id parameter
+- `backend/api/routes.py` - Pass verification_id to run_verification, improved error handling
+- `frontend/src/app/batch/page.tsx` - Full CSV upload implementation
 
-**Backend (Python/FastAPI):**
-- `main.py` - FastAPI app with CORS, lifespan management
-- `config.py` - Environment configuration with MOCK_MODE toggle
-- `db.py` - DuckDB operations for LEIE and verification_log
-- `scripts/init_db.py` - Database initialization script
-- `llm/provider.py` - Abstract LLM provider with mock/live implementations
-- `graph/state.py` - VerificationState dataclass
-- `requirements.txt` - All Python dependencies
+### Git Commits
+- `f90d254` - Implement CSV upload with physician count display (Feature #72)
 
-**Frontend (Next.js 14):**
-- `layout.tsx` - Root layout with tab navigation
-- `page.tsx` - Redirect to /verify
-- `verify/page.tsx` - NPI input form, pipeline tracker placeholder
-- `batch/page.tsx` - Text input and CSV upload UI
-- `dashboard/page.tsx` - Metric cards and chart placeholders
-- `review/page.tsx` - HITL queue with action buttons
-- `not-found.tsx` - 404 page
-- Tailwind config with custom EverCred color palette
+---
 
-### 5. Development Setup (COMPLETED)
-- `init.sh`: Complete setup script that:
-  - Creates Python virtual environment
-  - Installs all dependencies
-  - Installs Playwright Chromium
-  - Initializes DuckDB with test data
-  - Starts both backend and frontend servers
+## Previous Session Summary
 
-- `.env.example`: Default configuration with MOCK_MODE=true
-- `.gitignore`: Comprehensive ignore patterns
-- `README.md`: Project documentation with architecture diagram
+### Date: Session 1 (Initializer Agent)
 
-### 6. Git Repository (COMPLETED)
+### Accomplishments
+- Created 112 comprehensive features in features.db
+- Created seed data files (LEIE test CSV, test physicians CSV)
+- Created mock data modules (NPI, DCA, LLM responses)
+- Set up complete project structure (backend + frontend)
+- Created init.sh setup script
 - Initialized git repository
-- Created initial commit with all seed data and structure
-- Commit: `c91ccdf - Initial setup: init.sh, seed data, project structure, and features created via API`
 
-## What's Next for Session 2+
+---
 
-The next coding agent should:
+## What's Next for Next Session
 
-1. **Get the next feature** using `feature_get_next` tool
-2. **Implement the feature** following the steps in the feature description
-3. **Test thoroughly** in mock mode
-4. **Mark as passing** using `feature_mark_passing` tool with the feature_id
-5. **Commit changes** with descriptive messages
+1. **Restart Backend Server** with `--reload` flag:
+   ```bash
+   cd backend
+   source .venv/bin/activate
+   export EVERCRED_MOCK_MODE=true
+   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+   ```
 
-### Priority Implementation Order:
-1. NPI client with rule-based parsing (`backend/sources/npi.py`)
-2. DCA client with mock support (`backend/sources/dca.py`)
-3. LEIE query module (`backend/sources/leie.py`)
-4. LangGraph nodes and workflow (`backend/graph/nodes.py`, `workflow.py`)
-5. FastAPI routes (`backend/api/routes.py`)
-6. SSE streaming (`backend/api/sse.py`)
-7. Frontend components and API integration
+2. **Verify Backend Fix**: Run verification API test:
+   ```bash
+   curl -s -X POST http://localhost:8000/api/verify \
+     -H "Content-Type: application/json" \
+     -d '{"npi": "1003127655"}'
+   ```
+
+3. **Test Feature #73**: Batch processing starts with queued status
+   - Enter NPIs in batch textarea
+   - Click Run Batch
+   - Verify all rows show "Queued" status initially
+
+4. **Continue with remaining 21 features** using `feature_get_next`
 
 ## Environment Status
-- Mock mode: ENABLED (default)
-- All seed data: CREATED
-- Features: 112 total, 0 passing (0%)
-- Git: Clean working tree
+- Mock mode: ENABLED
+- Features: 91/112 passing (81.2%)
+- Git: Clean after commit f90d254
+- **Backend servers need restart to apply code changes**
 
-## Notes for Future Sessions
-- NEVER remove or edit features - only mark as passing
-- Run `./init.sh` to set up the development environment
-- Test in mock mode first (EVERCRED_MOCK_MODE=true)
-- Features are stored in `features.db` SQLite database
+## Notes
+- Feature #72 was implemented and tested successfully
+- The verification workflow fix is correct but needs server restart
 - Use `feature_get_next` to get the highest priority pending feature
+- Always test both backend (curl) and frontend (Playwright) before marking features as passing
