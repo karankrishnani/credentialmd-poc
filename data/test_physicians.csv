@@ -1,0 +1,11 @@
+npi,first_name,last_name,expected_outcome
+1003127655,MOUSTAFA,ABOSHADY,verified
+1588667638,SARAH,CHEN,verified
+1497758544,JAMES,WILLIAMS,verified
+1234567001,ROBERT,EXCLUDED,failed_leie
+1234567002,LISA,BANNEDBERG,failed_leie
+,MARIA,NOPI-EXCLUD,failed_leie
+1111111111,MICHAEL,GHOSTDOC,escalated_no_ca_license
+2222222222,JENNIFER,MISMATCH,flagged_name_mismatch
+3333333333,DAVID,EXPIREDLICENSE,flagged_expired_license
+4444444444,ANNA,LOWCONFIDENCE,escalated_low_confidence
