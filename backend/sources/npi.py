@@ -289,7 +289,7 @@ def _parse_npi_response(
     # Filter taxonomies for target state
     state_taxonomies = [
         t for t in result.all_taxonomies
-        if t.get("state", "").upper() == target_state.upper()
+        if (t.get("state") or "").upper() == target_state.upper()
     ]
     logger.debug("NPI: Taxonomy filtering: total=%d state_%s=%d",
                   len(result.all_taxonomies), target_state, len(state_taxonomies))
