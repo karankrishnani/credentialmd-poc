@@ -35,6 +35,17 @@ The app ships with `CREDENTIALMD_MOCK_MODE=true` by default. In mock mode:
 
 Mock mode allows the entire pipeline to be tested and demoed without external dependencies.
 
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| AI / LLM | Claude Opus via Claude Code Agent SDK (no API costs) |
+| Orchestration | LangGraph (stateful workflow with HITL interrupts) |
+| Backend | FastAPI, Python 3.11+, httpx, Playwright |
+| Frontend | Next.js 14, Tailwind CSS, Recharts |
+| Database | DuckDB (LEIE exclusions, verification logs) |
+| Streaming | Server-Sent Events (SSE) for real-time updates |
+
 ## Architecture
 
 ```mermaid
