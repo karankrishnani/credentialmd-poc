@@ -1,0 +1,1361 @@
+<project_specification>
+  <project_name>EverCred POC - Physician Credentialing Verification Agent</project_name>
+
+  <overview>
+    A LangGraph-based AI agent that automates physician credentialing verification by
+    orchestrating lookups across three public data sources: the NPI Registry API, the
+    California DCA License Search, and the OIG LEIE exclusion list. The agent cross-references
+    results, detects discrepancies, assigns confidence scores, and escalates ambiguous cases
+    to a human reviewer via a human-in-the-loop workflow. A Next.js dashboard provides
+    real-time visibility into verification status, source latency, failure rates, and cost
+    per verification.
+
+    This POC targets the Evercred ML Engineer role and demonstrates non-deterministic system
+    engineering, multi-source orchestration, and human-in-the-loop escalation patterns.
+
+    The POC is scoped to California physicians as a proving ground, but the data model and
+    graph state are designed to be state-agnostic so the system can expand to additional
+    states without structural changes.
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <framework>Next.js 14 (App Router)</framework>
+      <styling>Tailwind CSS</styling>
+      <charts>Recharts</charts>
+      <state_management>React hooks and SWR for data fetching</state_management>
+      <port>3000</port>
+    </frontend>
+    <backend>
+      <runtime>Python 3.11+ (virtual environment via python -m venv .venv)</runtime>
+      <framework>FastAPI with uvicorn</framework>
+      <agent_framework>LangGraph (langgraph >= 0.2)</agent_framework>
+      <llm_provider>Claude via claude_agent_sdk (uses Claude Code ~/.claude/.credentials.json)</llm_provider>
+      <database>DuckDB (in-process, for LEIE lookups and verification logs)</database>
+      <scraping>Playwright (Python, chromium) for CA DCA license lookup</scraping>
+      <http_client>httpx (async) for NPI Registry API</http_client>
+      <port>8000</port>
+    </backend>
+    <communication>
+      <api>REST endpoints (FastAPI) + Server-Sent Events for real-time status updates</api>
+      <note>No WebSockets. SSE is sufficient for unidirectional status streaming.</note>
+    </communication>
+  </technology_stack>
+
+  <prerequisites>
+    <environment_setup>
+      - Python 3.11+ with pip
+      - Node.js 18+ with npm
+      - Claude Code installed and authenticated (provides ~/.claude/.credentials.json)
+      - Playwright browsers: playwright install chromium (run after pip install)
+      - OIG LEIE CSV file downloaded and loaded via init script (see data_sources.leie)
+    </environment_setup>
+
+    <virtual_environment>
+      cd backend
+      python -m venv .venv
+      source .venv/bin/activate    # Linux/macOS
+      pip install -r requirements.txt
+      playwright install chromium
+    </virtual_environment>
+  </prerequisites>
+
+  <!-- ============================================================ -->
+  <!--  DATA SOURCES                                                 -->
+  <!-- ============================================================ -->
+
+  <data_sources>
+
+    <source name="NPI Registry API" id="npi">
+      <purpose>Primary identity and license number lookup for physicians</purpose>
+      <endpoint>https://npiregistry.cms.hhs.gov/api/?version=2.1</endpoint>
+      <auth>None required</auth>
+      <format>JSON</format>
+      <rate_limit>No published limit; throttle to 1 req/sec for bulk operations</rate_limit>
+      <docs>https://npiregistry.cms.hhs.gov/api-page</docs>
+
+      <query_parameters>
+        - version: "2.1" (required)
+        - number: 10-digit NPI (exact match, this is the only supported lookup mode for POC)
+      </query_parameters>
+
+      <response_fields>
+        - results[].number: NPI number
+        - results[].basic.first_name, last_name, middle_name, credential, sex
+        - results[].basic.enumeration_date, last_updated, status ("A" = active)
+        - results[].basic.sole_proprietor, name_prefix, name_suffix
+        - results[].taxonomies[]: array of specialty/license entries
+          - .code: taxonomy code (e.g., "207R00000X" = Internal Medicine)
+          - .desc: human-readable specialty description
+          - .license: state license number (self-reported)
+          - .state: 2-letter state code for this license
+          - .primary: boolean indicating primary taxonomy
+          - .taxonomy_group: group identifier
+        - results[].addresses[]: mailing and practice location addresses
+        - results[].practiceLocations[]: additional practice sites
+      </response_fields>
+
+      <extraction_logic>
+        NPI parsing is entirely rule-based. No LLM is called for this step.
+
+        1. Query by NPI number: GET /api/?version=2.1&number={npi}
+        2. If result_count == 0: mark as "npi_not_found", flag for HITL
+        3. If basic.status != "A": mark as "npi_inactive", flag for HITL
+        4. Iterate through taxonomies[] array
+        5. Filter for entries where state == target_state (e.g., "CA" for POC)
+        6. Among matching state entries, find any with primary == true
+        7. If exactly one primary match: extract license number from .license field
+        8. If multiple primary matches with different license numbers: flag for HITL
+        9. If no primary match but state entries exist: take the first state match,
+           note "no primary taxonomy" as a warning
+        10. If no state entries at all: flag for HITL with reason "no {state} license in NPI"
+        11. Store: license_number, license_state, specialty (desc), provider name, all addresses
+      </extraction_logic>
+
+      <retry_logic>
+        - On HTTP 5xx or connection error: retry with exponential backoff
+        - Schedule: 1s, 2s, 4s, 8s (max 4 retries)
+        - On HTTP 429 (rate limit): wait 10s before retry
+        - On HTTP 4xx (client error): do not retry, mark as error
+        - On all retries exhausted: mark source as "unavailable", flag for HITL
+        - Log every retry attempt with timestamp, status code, and attempt number
+      </retry_logic>
+
+      <example_response>
+        {
+          "result_count": 1,
+          "results": [{
+            "number": "1003127655",
+            "basic": {
+              "first_name": "MOUSTAFA",
+              "last_name": "ABOSHADY",
+              "middle_name": "MOATAZ",
+              "credential": "M.D.",
+              "enumeration_date": "2010-06-29",
+              "last_updated": "2018-03-17",
+              "name_prefix": "--",
+              "name_suffix": "--",
+              "sex": "M",
+              "sole_proprietor": "NO",
+              "status": "A"
+            },
+            "taxonomies": [
+              {
+                "code": "207R00000X",
+                "desc": "Internal Medicine",
+                "license": "LP02034",
+                "primary": false,
+                "state": "RI"
+              },
+              {
+                "code": "207R00000X",
+                "desc": "Internal Medicine",
+                "license": "A128437",
+                "primary": false,
+                "state": "CA"
+              },
+              {
+                "code": "208M00000X",
+                "desc": "Hospitalist",
+                "license": "A128437",
+                "primary": true,
+                "state": "CA"
+              }
+            ],
+            "addresses": [
+              {
+                "address_1": "5150 E PACIFIC COAST HWY",
+                "address_2": "SUITE 500",
+                "address_purpose": "MAILING",
+                "city": "LONG BEACH",
+                "state": "CA",
+                "postal_code": "90804",
+                "country_code": "US"
+              },
+              {
+                "address_1": "3751 KATELLA AVE",
+                "address_purpose": "LOCATION",
+                "city": "LOS ALAMITOS",
+                "state": "CA",
+                "postal_code": "907203113",
+                "telephone_number": "928-854-9603"
+              }
+            ]
+          }]
+        }
+      </example_response>
+
+      <hitl_triggers>
+        - result_count == 0 (NPI not found)
+        - basic.status != "A" (NPI deactivated or inactive)
+        - No taxonomy entry matching the target state
+        - No taxonomy entry with primary == true for the target state
+        - Multiple different license numbers for the target state
+      </hitl_triggers>
+
+      <hitl_links>
+        When escalating to human review, provide:
+        - NPI lookup URL: https://npiregistry.cms.hhs.gov/api/?version=2.1&number={npi}
+        - NPI search page: https://npiregistry.cms.hhs.gov/search
+      </hitl_links>
+    </source>
+
+    <source name="California DCA License Search" id="ca_dca">
+      <purpose>Verify license status, expiration, and disciplinary actions for CA physicians</purpose>
+      <url>https://search.dca.ca.gov/?BD=800</url>
+      <auth>None, but protected by Cloudflare Turnstile CAPTCHA</auth>
+      <format>HTML (server-rendered search results)</format>
+      <scraping_tool>Playwright (Python, headed or headless chromium)</scraping_tool>
+
+      <search_parameters>
+        For the POC, search is by license number only:
+        - boardCode: "16" (Medical Board of California, pre-selected when BD=800 maps to it)
+        - licenseType: "289" (Physician's and Surgeon's)
+        - licenseNumber: the license number extracted from NPI taxonomies[] (e.g., "A128437")
+        - csrfToken: dynamically generated per page load, must be read from hidden input
+        - cf-turnstile-response: Cloudflare Turnstile token, auto-generated in browser context
+      </search_parameters>
+
+      <playwright_approach>
+        1. Launch chromium (try headless first, fall back to headed if CAPTCHA blocks)
+        2. Navigate to https://search.dca.ca.gov/
+        3. Select board dropdown: "Medical Board of California" (value="16")
+        4. Select license type dropdown: "Physician's and Surgeon's" (value="289")
+        5. Fill license number input: #licenseNumber
+        6. Wait for Turnstile widget to auto-solve (data-callback="onTurnstileSuccess")
+        7. Click SEARCH button: #srchSubmitHome
+        8. Wait for results to load (look for article.post elements)
+        9. Parse the result HTML (see result_html_structure below)
+        10. If no results or CAPTCHA fails after retries, flag for HITL
+      </playwright_approach>
+
+      <result_html_structure>
+        Results appear as article.post elements. Key data extraction selectors:
+
+        Each result article contains:
+        - Name: article footer ul.actions li h3 (e.g., "ABAD-SANTOS, CRISELDA CALAYAN")
+        - License Number: a[href*="/details/"] span[id^="lic"] (e.g., "A 105195")
+        - License Type: text after "License Type:" (e.g., "Physician and Surgeon A")
+        - License Status: text after "License Status:" (e.g., "License Revoked")
+        - Expiration Date: text after "Expiration Date:" (e.g., "N/A" or date string)
+        - Secondary Status: text after "Secondary Status:" (e.g., "Probation Completed")
+        - City: span[id^="city"] first instance (e.g., "WOODLAND HILLS")
+        - State: text after "State:" (e.g., "California")
+        - County: text after "County:" (e.g., "LOS ANGELES")
+        - Zip: text after "Zip:" (e.g., "91367")
+        - Has Disciplinary Action: presence of img[alt="Has public record or disciplinary action"]
+        - Has Public Documents: presence of img[alt="Has public documents available to view"]
+        - Detail Link: a.button[href*="/details/"] href attribute
+
+        Example parsed result:
+        {
+          "name": "ABAD-SANTOS, CRISELDA CALAYAN",
+          "license_number": "A 105195",
+          "license_type": "Physician and Surgeon A",
+          "license_status": "License Revoked",
+          "expiration_date": "N/A",
+          "secondary_status": "Probation Completed",
+          "city": "WOODLAND HILLS",
+          "state": "California",
+          "county": "LOS ANGELES",
+          "zip": "91367",
+          "has_disciplinary_action": true,
+          "has_public_documents": true,
+          "detail_url": "/details/8002/A/105195/846a9358ee7bd7edb238e228e0fc7fd5"
+        }
+
+        Known license statuses (from DCA hint popups):
+        - "Licensed - Current": Active and in good standing
+        - "License Revoked": Revoked via disciplinary action, no practice permitted
+        - "License Suspended": Temporarily suspended
+        - "License Surrendered": Voluntarily surrendered
+        - "Delinquent": Renewal not completed
+        - "Deceased": Provider is deceased
+        - "Inactive": Not currently practicing
+      </result_html_structure>
+
+      <retry_logic>
+        - On Turnstile/CAPTCHA failure: retry up to 3 times with fresh browser context
+        - On navigation timeout: retry with exponential backoff (2s, 4s, 8s)
+        - On empty results (page loaded but no article.post found): retry once,
+          then flag for HITL if still empty
+        - On Playwright crash or browser error: restart browser, retry once
+        - Max total retries per lookup: 4
+        - On all retries exhausted: mark source as "unavailable", flag for HITL
+        - Between retries, close and relaunch browser context (fresh session)
+      </retry_logic>
+
+      <mock_mode>
+        When EVERCRED_MOCK_MODE=true, bypass Playwright entirely.
+        Return synthetic DCA results from a dictionary of known test license numbers.
+        Mock data must cover all license status types (see mock_data section).
+      </mock_mode>
+
+      <hitl_triggers>
+        - License number not found on DCA (no results returned)
+        - CAPTCHA blocks all retry attempts
+        - License status is anything other than "Licensed - Current"
+        - Playwright/browser error after all retries exhausted
+      </hitl_triggers>
+
+      <hitl_links>
+        When escalating to human review, provide:
+        - DCA search URL: https://search.dca.ca.gov/?BD=800
+        - Instructions: "Search with Board = Medical Board of California,
+          License Type = Physician's and Surgeon's, License Number = {license_number}"
+      </hitl_links>
+    </source>
+
+    <source name="OIG LEIE Exclusion List" id="leie">
+      <purpose>Check if physician is excluded from federal healthcare programs</purpose>
+      <download_url>https://oig.hhs.gov/exclusions/downloadables/UPDATED.csv</download_url>
+      <info_page>https://oig.hhs.gov/exclusions/exclusions_list.asp</info_page>
+      <format>CSV, loaded into DuckDB via init script (NOT at app startup)</format>
+      <refresh>Monthly full replacement file from OIG</refresh>
+
+      <csv_fields>
+        FIELD           LENGTH    DESCRIPTION
+        -------         ------    -----------
+        LASTNAME        20        Last name (truncated if longer)
+        FIRSTNAME       15        First name (truncated if longer)
+        MIDNAME         15        Middle name
+        BUSNAME         30        Business name
+        GENERAL         20        General classification
+        SPECIALTY       20        Provider specialty
+        UPIN            6         Unique Physician Identification Number (legacy)
+        NPI             10        National Provider Identifier
+        DOB             8         Date of birth (YYYYMMDD)
+        ADDRESS         30        Street address (truncated if longer)
+        CITY            20        City
+        STATE           2         State code
+        ZIP             5         ZIP code (5-digit only)
+        EXCLTYPE        9         Exclusion authority code
+        EXCLDATE        8         Exclusion date (YYYYMMDD)
+        REINDATE        8         Reinstatement date (YYYYMMDD, blank if still excluded)
+        WAIVERDATE      8         Waiver date (YYYYMMDD)
+        WAIVERSTATE     2         State that granted waiver
+      </csv_fields>
+
+      <init_script>
+        The LEIE CSV is loaded into DuckDB via a standalone init script, NOT at app startup.
+        This script is run once after downloading the CSV (or the test CSV for mock mode).
+
+        Script: backend/scripts/init_db.py
+
+        What it does:
+        1. Creates (or recreates) the DuckDB database file at data/evercred.duckdb
+        2. Loads UPDATED.csv (or UPDATED_test.csv) into the leie table:
+           CREATE OR REPLACE TABLE leie AS
+             SELECT * FROM read_csv_auto('data/UPDATED.csv');
+        3. Creates the verification_log table (see database section)
+        4. Creates indexes on leie.NPI and leie.LASTNAME for fast lookups
+        5. Prints row count and sample rows for verification
+
+        Usage:
+          python scripts/init_db.py                          # loads real CSV
+          python scripts/init_db.py --test                   # loads test CSV
+          python scripts/init_db.py --csv path/to/custom.csv # loads custom CSV
+      </init_script>
+
+      <data_caveats>
+        - No SSNs or EINs in the public file
+        - Names are truncated at fixed widths (long names lose characters)
+        - ~5,000 deceased individuals remain in the file
+        - Reinstated providers are REMOVED from the file entirely
+        - Absence from the file means either never excluded OR reinstated
+        - NPI field may be blank for older exclusion records
+      </data_caveats>
+
+      <extraction_logic>
+        1. Primary lookup by NPI (most reliable):
+           SELECT * FROM leie WHERE NPI = '{npi}'
+        2. Fallback lookup by name + state:
+           SELECT * FROM leie
+           WHERE UPPER(LASTNAME) = UPPER('{last_name}')
+             AND UPPER(FIRSTNAME) = UPPER('{first_name}')
+             AND STATE = '{state}'
+        3. If any row is returned: physician is EXCLUDED (hard stop, automatic fail)
+        4. If no match: physician is NOT on the exclusion list (clear)
+        5. Any LEIE match overrides all other verification results
+      </extraction_logic>
+
+      <hitl_triggers>
+        - Name-based fallback returns multiple records (ambiguous match)
+        - NPI lookup returns no match but name-based lookup does (possible data issue)
+      </hitl_triggers>
+
+      <dummy_data_for_testing>
+        Create a test CSV (data/UPDATED_test.csv) loaded via init script with --test flag.
+        See mock_data section for required test scenarios.
+      </dummy_data_for_testing>
+    </source>
+
+  </data_sources>
+
+  <!-- ============================================================ -->
+  <!--  CORE FEATURES                                                -->
+  <!-- ============================================================ -->
+
+  <core_features>
+
+    <verification_pipeline>
+      - Accept physician input as a 10-digit NPI number (only supported lookup mode for POC)
+      - Step 1: Query NPI Registry API to retrieve identity, specialty, and license number
+        - License extraction is rule-based (no LLM). If rules cannot determine a single
+          license number, route to HITL immediately.
+      - Step 2 (parallel): Query CA DCA via Playwright for license status verification
+      - Step 3 (parallel): Query LEIE via DuckDB for federal exclusion check
+      - Cross-reference results across all three sources using Claude for reasoning
+      - Detect discrepancies: license status conflicts, exclusion hits
+      - Assign confidence score: auto-verify (>90%), review (70-90%), escalate (<70%)
+      - Generate structured verification report with per-source findings
+    </verification_pipeline>
+
+    <bulk_verification>
+      - Accept multiple NPI numbers (up to 20 per batch) via API or CSV upload
+      - Process SEQUENTIALLY to respect NPI API rate limits (1 req/sec throttle)
+      - Each NPI goes through the full verification pipeline before the next starts
+      - Stream per-physician progress updates via SSE to the dashboard
+      - Dashboard shows all physicians in the batch with individual status tracking
+      - If NPI API becomes unavailable mid-batch: pause, retry with exponential backoff,
+        continue remaining NPIs once recovered or mark remaining as "source_unavailable"
+    </bulk_verification>
+
+    <human_in_the_loop>
+      - LangGraph interrupt mechanism for pausing workflow at decision points
+      - Triggered when: license not found in NPI, Playwright/CAPTCHA fails on DCA,
+        ambiguous exclusion match, or confidence score below threshold
+      - Present the human reviewer with: current findings, specific issue details,
+        direct links to manually look up the data source (NPI search URL, DCA search URL),
+        and suggested action (approve, reject, needs more info)
+      - Human provides decision via dashboard UI, workflow resumes from interrupt point
+      - All HITL decisions are logged with timestamp and reviewer notes
+    </human_in_the_loop>
+
+    <monitoring_dashboard>
+      - Real-time verification status table: physician name, NPI, current step, status
+        (queued, npi_lookup, license_check, exclusion_check, verified, flagged, failed)
+      - Cost per verification: track Claude API token usage per physician, show running average
+      - Latency per source: bar chart showing p50/p95 response times for NPI API, DCA, LEIE
+      - Failure rates: percentage of lookups returning errors or no results, by source
+      - Verification outcome distribution: pie chart of auto-verified vs. flagged vs. failed
+    </monitoring_dashboard>
+
+    <mock_mode>
+      - Environment variable EVERCRED_MOCK_MODE (default: "true")
+      - When true: use MockLLMProvider (canned Claude responses), mock DCA responses
+        (no Playwright), and test LEIE CSV with synthetic data
+      - When false: use LiveLLMProvider (claude_agent_sdk with Opus), real Playwright
+        DCA scraping, and production LEIE CSV
+      - Mock mode MUST cover all verification scenarios comprehensively so that an
+        autonomous coding agent can build and test the full system without needing
+        live API access. See mock_data section for required coverage.
+    </mock_mode>
+
+    <retry_and_resilience>
+      All external source calls implement retry with exponential backoff:
+
+      - Base pattern for all sources:
+        async def retry_with_backoff(fn, max_retries=4, base_delay=1.0):
+            for attempt in range(max_retries + 1):
+                try:
+                    return await fn()
+                except RetryableError as e:
+                    if attempt == max_retries:
+                        raise SourceUnavailableError(...)
+                    delay = base_delay * (2 ** attempt)  # 1s, 2s, 4s, 8s
+                    log.warning(f"Retry {attempt+1}/{max_retries}, waiting {delay}s: {e}")
+                    await asyncio.sleep(delay)
+
+      - NPI API: retry on 5xx, connection errors, timeouts. No retry on 4xx.
+        On 429: wait 10s before retry.
+      - DCA Playwright: retry on CAPTCHA failure, navigation timeout, browser crash.
+        Each retry uses a fresh browser context.
+      - LEIE DuckDB: local queries, no retry needed (if DuckDB file is corrupt,
+        fail immediately and instruct user to re-run init script).
+
+      - Graceful degradation: if a source is unavailable after all retries, the
+        workflow continues with partial data and flags the missing source. The
+        confidence score is reduced, and the verification is flagged for HITL
+        with reason "source_unavailable: {source_name}".
+    </retry_and_resilience>
+
+  </core_features>
+
+  <!-- ============================================================ -->
+  <!--  LANGGRAPH WORKFLOW                                           -->
+  <!-- ============================================================ -->
+
+  <langgraph_workflow>
+
+    <graph_state>
+      The state is intentionally NOT locked to California. The target_state field
+      makes the pipeline reusable for any state with a scrapeable license lookup.
+
+      @dataclass
+      class VerificationState:
+          # Input
+          npi_number: str
+          target_state: str = "CA"       # Scoped to CA for POC, but not hardcoded elsewhere
+
+          # NPI results
+          npi_response: Optional[dict] = None
+          npi_found: bool = False
+          npi_active: bool = False
+          provider_name: Optional[str] = None          # "LAST, FIRST MIDDLE"
+          provider_first_name: Optional[str] = None
+          provider_last_name: Optional[str] = None
+          provider_credential: Optional[str] = None    # "M.D.", "D.O.", etc.
+          provider_specialty: Optional[str] = None      # from primary taxonomy desc
+          license_number: Optional[str] = None          # extracted for target_state
+          license_state: Optional[str] = None           # should match target_state
+          all_taxonomies: list[dict] = field(default_factory=list)
+          all_addresses: list[dict] = field(default_factory=list)
+
+          # State board results (DCA for CA, extensible for other states)
+          board_license_status: Optional[str] = None    # "Licensed - Current", "License Revoked", etc.
+          board_expiration_date: Optional[str] = None
+          board_name_on_license: Optional[str] = None
+          board_secondary_status: Optional[str] = None
+          board_has_disciplinary_action: bool = False
+          board_has_public_documents: bool = False
+          board_detail_url: Optional[str] = None
+          board_city: Optional[str] = None
+          board_raw: Optional[dict] = None
+
+          # LEIE results
+          leie_match: bool = False
+          leie_record: Optional[dict] = None
+
+          # Agent reasoning
+          discrepancies: list[str] = field(default_factory=list)
+          confidence_score: Optional[float] = None
+          confidence_reasoning: Optional[str] = None
+          verification_status: str = "pending"
+          # Statuses: pending, npi_lookup, license_check, exclusion_check,
+          #           analyzing, verified, flagged, failed, escalated
+
+          # HITL
+          needs_human_review: bool = False
+          human_review_reason: Optional[str] = None
+          human_review_links: list[dict] = field(default_factory=list)  # [{"label": "...", "url": "..."}]
+          human_decision: Optional[str] = None     # approved, rejected, needs_info
+          human_notes: Optional[str] = None
+
+          # Metrics
+          step_latencies: dict = field(default_factory=dict)  # {"npi_ms": 320, "dca_ms": 2100, ...}
+          llm_tokens_used: int = 0
+          errors: list[str] = field(default_factory=list)
+          retry_counts: dict = field(default_factory=dict)    # {"npi": 0, "dca": 2, "leie": 0}
+
+          # Source availability (for graceful degradation)
+          source_available: dict = field(default_factory=lambda: {"npi": True, "dca": True, "leie": True})
+    </graph_state>
+
+    <graph_nodes>
+      1. npi_lookup:
+         - Input: npi_number
+         - Action: Call NPI Registry API by NPI number (httpx GET with retry/backoff)
+         - Rule-based parsing (NO LLM):
+           a. Check result_count > 0, else flag HITL
+           b. Check basic.status == "A", else flag HITL
+           c. Filter taxonomies[] for state == target_state
+           d. Among state matches, find primary == true
+           e. Extract license number, specialty, provider name
+         - Output: Populate npi_found, npi_active, provider_*, license_number, license_state
+         - On source unavailable: set source_available["npi"] = False, flag HITL
+
+      2. board_lookup (parallel with leie_lookup):
+         - Input: license_number, target_state
+         - Action: For CA, use Playwright to scrape DCA search (with retry/backoff)
+         - Parse result HTML per result_html_structure spec
+         - Output: board_license_status, board_expiration_date, board_name_on_license,
+           board_has_disciplinary_action, board_detail_url, etc.
+         - On CAPTCHA/Playwright failure after retries: source_available["dca"] = False, flag HITL
+
+      3. leie_lookup (parallel with board_lookup):
+         - Input: npi_number, provider_first_name, provider_last_name, target_state
+         - Action: Query DuckDB leie table by NPI, then by name+state as fallback
+         - Output: leie_match (bool), leie_record (dict if match)
+         - This is a local query, effectively instant, no retry needed
+
+      4. discrepancy_detection:
+         - Input: All collected data from npi, board, leie
+         - Action: Use Claude (via LiveLLMProvider, Opus model) to:
+           a. Assess whether board license status is consistent with NPI active status
+           b. Evaluate any disciplinary actions or secondary statuses
+           c. Note any unavailable sources and their impact on confidence
+           d. Check LEIE exclusion (any match = automatic fail, no reasoning needed)
+         - System prompt: "You are a healthcare credentialing verification specialist.
+           Given the following evidence from three verification sources, identify any
+           discrepancies or concerns and assign a confidence score from 0 to 100.
+           Respond with JSON: {discrepancies: [...], confidence_score: N, reasoning: '...'}"
+         - Output: discrepancies[], confidence_score, confidence_reasoning
+
+      5. route_decision:
+         - Input: confidence_score, discrepancies, leie_match, source_available
+         - Logic (rule-based, no LLM):
+           - If leie_match == True: verification_status = "failed" (hard stop)
+           - If any source_available is False: verification_status = "flagged" (degraded)
+           - If confidence_score >= 90 and no discrepancies: verification_status = "verified"
+           - If confidence_score 70-89 or minor discrepancies: verification_status = "flagged"
+           - If confidence_score < 70: route to human_review
+
+      6. human_review (LangGraph interrupt):
+         - Pauses workflow execution via LangGraph interrupt mechanism
+         - Exposes collected data + discrepancy details via API
+         - Includes human_review_links with clickable URLs to data sources
+         - Waits for human input via POST /api/verify/{id}/review
+         - Resumes workflow with human_decision populated
+
+      7. finalize:
+         - Compile final verification report
+         - Calculate total cost (tokens used * per-token rate)
+         - Record all step latencies and retry counts
+         - Persist results to DuckDB verification_log table
+    </graph_nodes>
+
+    <graph_edges>
+      START -> npi_lookup
+      npi_lookup -> {board_lookup, leie_lookup}  (parallel fan-out, if license_number found)
+      npi_lookup -> human_review  (conditional: no license found or NPI inactive)
+      {board_lookup, leie_lookup} -> discrepancy_detection  (fan-in, waits for both)
+      discrepancy_detection -> route_decision
+      route_decision -> finalize  (if auto-verify or auto-fail)
+      route_decision -> human_review  (if low confidence or flagged)
+      human_review -> finalize
+      finalize -> END
+    </graph_edges>
+
+  </langgraph_workflow>
+
+  <!-- ============================================================ -->
+  <!--  LLM PROVIDER                                                 -->
+  <!-- ============================================================ -->
+
+  <llm_provider>
+    <pattern>
+      The LLM provider follows an abstract base class pattern with mock/live implementations
+      and a factory function controlled by an environment variable.
+
+      This pattern uses an abstract base class to allow swapping between a mock provider
+      (for deterministic testing without external dependencies) and a live provider
+      (for real Claude API calls via Claude Code credentials). The live provider
+      authenticates through the Claude Code SDK, reading credentials from
+      ~/.claude/.credentials.json, so no separate API key is needed.
+
+      - Abstract base class: LLMProvider
+        - async query(prompt: str, system: str = "") -> str
+      
+      - MockLLMProvider:
+        - Returns canned JSON responses based on patterns in the system prompt
+        - Recognizes "discrepancy" / "confidence" / "score" keywords in system prompt
+        - Returns varied mock responses to cover different confidence levels and
+          discrepancy scenarios (see mock_data section)
+      
+      - LiveLLMProvider:
+        - Uses claude_agent_sdk package for LLM calls
+        - Authenticates via Claude Code credentials at ~/.claude/.credentials.json
+        - No separate API key needed
+        - Model: claude-opus-4-20250514 (Opus for stronger reasoning on discrepancy analysis)
+        - max_turns: 1 (single response, no agentic tool use within the LLM call)
+        - allowed_tools: [] (pure LLM query)
+        - Error mapping: auth errors, rate limits, timeouts, subscription issues,
+          overloaded, connection errors all mapped to user-friendly LLMError exceptions
+          with error_type, suggestion, and recoverable flag
+      
+      - Factory: get_llm_provider()
+        - Checks EVERCRED_MOCK_MODE env var (default: "true")
+        - Returns MockLLMProvider or LiveLLMProvider accordingly
+
+      Claude is called at exactly ONE point in the workflow:
+
+      discrepancy_detection node:
+        - System prompt instructs Claude to act as a credentialing verification specialist
+        - Input: structured JSON with NPI data, board data, LEIE data, source availability
+        - Output: JSON with discrepancies array, confidence_score (0-100), reasoning string
+        - This is the only non-deterministic step in the pipeline
+        - NPI parsing and route_decision are both rule-based (no LLM)
+    </pattern>
+  </llm_provider>
+
+  <!-- ============================================================ -->
+  <!--  MOCK DATA                                                    -->
+  <!-- ============================================================ -->
+
+  <mock_data>
+    <design_principle>
+      Mock data must be comprehensive enough that the entire system can be built and
+      tested by an autonomous coding agent (Claude Code) without any live API access.
+      Every code path, every HITL trigger, every status badge, and every dashboard chart
+      must be exercisable in mock mode. The developer (Karan) will handle live testing
+      after the autonomous agent completes.
+    </design_principle>
+
+    <mock_npi_responses>
+      Dictionary keyed by NPI number. Each entry is a full NPI API response JSON.
+
+      Required test physicians (11 NPIs):
+
+      1. NPI "1003127655" - CLEAN VERIFICATION
+         - CA license A128437, primary=true, status=A
+         - Expected: license found, passes all checks, auto-verified
+
+      2. NPI "1234567890" - CLEAN VERIFICATION (second clean case)
+         - CA license G99999, primary=true, status=A
+         - Expected: auto-verified, exercises the happy path again
+
+      3. NPI "1111111111" - NO CA LICENSE
+         - Has taxonomies but none with state=CA (only NY and TX)
+         - Expected: HITL trigger "no CA license in NPI"
+
+      4. NPI "2222222222" - NO PRIMARY TAXONOMY
+         - Has CA taxonomy entries but none with primary=true
+         - Expected: takes first CA entry with warning, proceeds with reduced confidence
+
+      5. NPI "3333333333" - MULTIPLE CA LICENSE NUMBERS
+         - Has two CA taxonomies with different license numbers
+         - Expected: HITL trigger "multiple CA license numbers"
+
+      6. NPI "4444444444" - NPI INACTIVE
+         - basic.status = "D" (deactivated)
+         - Expected: HITL trigger "NPI inactive/deactivated"
+
+      7. NPI "5555555555" - LEIE EXCLUDED PHYSICIAN
+         - Valid CA license, status=A
+         - NPI matches a record in the test LEIE CSV
+         - Expected: automatic fail due to exclusion, regardless of other results
+
+      8. NPI "6666666666" - LICENSE REVOKED ON DCA
+         - CA license found in NPI, primary=true
+         - Mock DCA returns license_status = "License Revoked"
+         - Expected: flagged with discrepancy, low confidence score
+
+      9. NPI "7777777777" - DCA SOURCE UNAVAILABLE
+         - CA license found in NPI, primary=true
+         - Mock DCA raises SourceUnavailableError (simulates CAPTCHA failure)
+         - Expected: partial verification, flagged with "source_unavailable: dca"
+
+      10. NPI "8888888888" - NPI NOT FOUND
+          - result_count = 0, empty results array
+          - Expected: HITL trigger "NPI not found"
+
+      11. NPI "9999999999" - LICENSE DELINQUENT
+          - CA license found in NPI, primary=true
+          - Mock DCA returns license_status = "Delinquent"
+          - Expected: flagged, moderate confidence, needs review
+    </mock_npi_responses>
+
+    <mock_dca_responses>
+      Dictionary keyed by license number. Each entry is a parsed DCA result dict
+      matching the result_html_structure schema.
+
+      License "A128437":
+        license_status: "Licensed - Current"
+        expiration_date: "2027-06-30"
+        name: "ABOSHADY, MOUSTAFA MOATAZ"
+        has_disciplinary_action: false
+        -> clean verification
+
+      License "G99999":
+        license_status: "Licensed - Current"
+        expiration_date: "2026-12-31"
+        name: "SMITH, JOHN DAVID"
+        has_disciplinary_action: false
+        -> clean verification
+
+      License "A105195":
+        license_status: "License Revoked"
+        expiration_date: "N/A"
+        secondary_status: "Probation Completed"
+        name: "ABAD-SANTOS, CRISELDA CALAYAN"
+        has_disciplinary_action: true
+        has_public_documents: true
+        -> maps to NPI "6666666666" scenario
+
+      License "B777777":
+        Raises SourceUnavailableError
+        -> maps to NPI "7777777777" scenario
+
+      License "C999999":
+        license_status: "Delinquent"
+        expiration_date: "2025-03-31"
+        name: "JONES, ALICE MARIE"
+        has_disciplinary_action: false
+        -> maps to NPI "9999999999" scenario
+
+      License "D555555":
+        license_status: "Licensed - Current"
+        expiration_date: "2027-01-15"
+        name: "EXCLUDED, DOCTOR E"
+        has_disciplinary_action: false
+        -> maps to NPI "5555555555" (clean on DCA, but LEIE catches exclusion)
+    </mock_dca_responses>
+
+    <mock_leie_test_csv>
+      File: data/UPDATED_test.csv
+      Loaded via: python scripts/init_db.py --test
+
+      Columns match the real LEIE layout exactly:
+      LASTNAME,FIRSTNAME,MIDNAME,BUSNAME,GENERAL,SPECIALTY,UPIN,NPI,DOB,ADDRESS,CITY,STATE,ZIP,EXCLTYPE,EXCLDATE,REINDATE,WAIVERDATE,WAIVERSTATE
+
+      Required rows:
+
+      1. Excluded physician WITH NPI (matches NPI "5555555555"):
+         EXCLUDED,DOCTOR,E,,INDIVIDUAL,INTERNAL MEDICINE,,5555555555,19700101,123 MAIN ST,LOS ANGELES,CA,90001,1128a(a)(1),20200115,,,
+
+      2. Excluded physician WITHOUT NPI (name-only match test):
+         NOPINUMBER,JANE,M,,INDIVIDUAL,FAMILY MEDICINE,,,19650515,456 OAK AVE,SAN DIEGO,CA,92101,1128a(a)(2),20190601,,,
+
+      3. Excluded physician from different state (should NOT match CA lookups):
+         OTHERSTATE,BOB,R,,INDIVIDUAL,SURGERY,,9876543210,19800820,789 ELM ST,HOUSTON,TX,77001,1128a(a)(3),20210301,,,
+
+      4-10. Non-excluded names (padding rows to make the CSV realistic):
+         Fill with synthetic names that do NOT match any test NPI physicians.
+         These ensure that "no match" is the normal result for clean verifications.
+    </mock_leie_test_csv>
+
+    <mock_llm_responses>
+      MockLLMProvider returns different canned JSON based on patterns in the input:
+
+      Pattern: "License Revoked" or "Revoked" in prompt
+        -> {"discrepancies": ["State board shows license revoked but NPI shows active status"],
+            "confidence_score": 15, "reasoning": "License revocation is a critical finding..."}
+
+      Pattern: "source_unavailable" in prompt
+        -> {"discrepancies": ["DCA source was unavailable, license status unverified"],
+            "confidence_score": 55, "reasoning": "Unable to verify license status..."}
+
+      Pattern: "Delinquent" in prompt
+        -> {"discrepancies": ["License renewal is delinquent, may indicate lapsed credentials"],
+            "confidence_score": 65, "reasoning": "Delinquent status suggests..."}
+
+      Pattern: "Licensed - Current" and no exclusion
+        -> {"discrepancies": [], "confidence_score": 97,
+            "reasoning": "All sources consistent. NPI active, license current, no exclusions."}
+
+      Pattern: "no primary taxonomy" in prompt
+        -> {"discrepancies": ["No primary taxonomy designation for target state"],
+            "confidence_score": 78, "reasoning": "License was found but not marked as primary..."}
+
+      Default (no pattern match):
+        -> {"discrepancies": ["Unable to fully assess verification"],
+            "confidence_score": 50, "reasoning": "Insufficient data for high confidence..."}
+    </mock_llm_responses>
+
+    <test_batch_csv>
+      File: data/test_physicians.csv
+      Used for testing bulk verification from the dashboard.
+
+      npi
+      1003127655
+      1234567890
+      1111111111
+      2222222222
+      3333333333
+      4444444444
+      5555555555
+      6666666666
+      7777777777
+      8888888888
+      9999999999
+
+      This exercises all 11 test scenarios in a single batch run.
+      Expected outcomes:
+      - 2 auto-verified (1003127655, 1234567890)
+      - 1 auto-failed (5555555555, LEIE exclusion)
+      - 4 HITL escalations (1111111111, 3333333333, 4444444444, 8888888888)
+      - 4 flagged for review (2222222222, 6666666666, 7777777777, 9999999999)
+    </test_batch_csv>
+  </mock_data>
+
+  <!-- ============================================================ -->
+  <!--  DATABASE                                                     -->
+  <!-- ============================================================ -->
+
+  <database>
+    <engine>DuckDB (in-process, file at data/evercred.duckdb)</engine>
+    <init>Created and populated by backend/scripts/init_db.py (NOT at app startup)</init>
+
+    <tables>
+      <leie>
+        Loaded from CSV via init script.
+        CREATE OR REPLACE TABLE leie AS SELECT * FROM read_csv_auto('{csv_path}');
+        CREATE INDEX idx_leie_npi ON leie(NPI);
+        CREATE INDEX idx_leie_name ON leie(LASTNAME, FIRSTNAME);
+      </leie>
+
+      <verification_log>
+        CREATE TABLE IF NOT EXISTS verification_log (
+          id VARCHAR PRIMARY KEY,              -- UUID
+          npi_number VARCHAR NOT NULL,
+          target_state VARCHAR NOT NULL DEFAULT 'CA',
+          provider_name VARCHAR,
+          license_number VARCHAR,
+          verification_status VARCHAR NOT NULL,  -- pending, verified, flagged, failed, escalated
+          confidence_score FLOAT,
+          confidence_reasoning TEXT,
+          discrepancies JSON,                    -- array of discrepancy descriptions
+          npi_raw JSON,                          -- full NPI API response
+          board_raw JSON,                        -- full board lookup result
+          leie_match BOOLEAN DEFAULT FALSE,
+          leie_record JSON,
+          source_available JSON,                 -- {"npi": true, "dca": false, "leie": true}
+          needs_human_review BOOLEAN DEFAULT FALSE,
+          human_review_reason TEXT,
+          human_decision VARCHAR,                -- approved, rejected, needs_info, NULL
+          human_notes TEXT,
+          latency_npi_ms INTEGER,
+          latency_board_ms INTEGER,
+          latency_leie_ms INTEGER,
+          latency_llm_ms INTEGER,
+          llm_tokens_used INTEGER DEFAULT 0,
+          cost_usd FLOAT DEFAULT 0.0,
+          retry_counts JSON,                     -- {"npi": 0, "dca": 2, "leie": 0}
+          errors JSON,                           -- array of error strings
+          batch_id VARCHAR,                      -- NULL for single, batch UUID for bulk
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          completed_at TIMESTAMP
+        );
+      </verification_log>
+    </tables>
+  </database>
+
+  <!-- ============================================================ -->
+  <!--  API ENDPOINTS                                                -->
+  <!-- ============================================================ -->
+
+  <api_endpoints>
+    <verification>
+      - POST /api/verify
+        Body: { "npi": "1003127655" }
+        Response: { "verification_id": "uuid", "status": "processing" }
+        Starts async LangGraph workflow, returns immediately with ID.
+
+      - GET /api/verify/{verification_id}
+        Response: Full VerificationState as JSON (current status, findings, score)
+
+      - GET /api/verify/{verification_id}/stream
+        SSE endpoint streaming status updates as workflow progresses.
+        Events: { "step": "npi_lookup", "status": "complete", "data": {...} }
+
+      - POST /api/verify/{verification_id}/review
+        Body: { "decision": "approved", "notes": "Verified manually via DCA" }
+        Submits human review decision, resumes paused LangGraph workflow.
+    </verification>
+
+    <batch>
+      - POST /api/batch
+        Body: { "npis": ["1003127655", "1234567890", ...] }
+        OR multipart form with CSV file (single column: npi)
+        Response: { "batch_id": "uuid", "total": 10, "status": "processing" }
+        Processes sequentially. Each NPI runs full pipeline before next starts.
+
+      - GET /api/batch/{batch_id}
+        Response: { "batch_id": "...", "total": 10, "completed": 4, "results": [...] }
+
+      - GET /api/batch/{batch_id}/stream
+        SSE endpoint streaming per-physician updates as each completes.
+
+      - GET /api/batch/{batch_id}/export
+        Response: CSV download of completed verification results
+    </batch>
+
+    <metrics>
+      - GET /api/metrics
+        Response: {
+          "total_verifications": 42,
+          "avg_cost_usd": 0.18,
+          "avg_latency_ms": { "npi": 320, "dca": 2100, "leie": 5, "llm": 1200 },
+          "failure_rates": { "npi": 0.02, "dca": 0.08, "leie": 0.001 },
+          "outcome_distribution": { "verified": 30, "flagged": 8, "failed": 4 },
+          "retry_stats": { "npi": { "avg": 0.1, "max": 2 }, "dca": { "avg": 0.5, "max": 3 } }
+        }
+        Computed from verification_log table in DuckDB.
+    </metrics>
+
+    <hitl>
+      - GET /api/hitl/queue
+        Response: Array of verifications with needs_human_review=true and human_decision=null.
+        Each entry includes verification_id, provider_name, npi, reason, collected evidence,
+        and human_review_links.
+    </hitl>
+  </api_endpoints>
+
+  <!-- ============================================================ -->
+  <!--  UI LAYOUT                                                    -->
+  <!-- ============================================================ -->
+
+  <ui_layout>
+    <main_structure>
+      Next.js App Router with tabbed navigation. No authentication required (POC scope).
+      - Header: "EverCred POC" branding + tab navigation
+      - Tabs: Verify | Batch | Dashboard | Review Queue
+      - Data fetching: SWR for polling, EventSource for SSE streams
+    </main_structure>
+
+    <verify_tab>
+      - Input form: single NPI number text field with validation (10 digits)
+      - "Verify" button to start single-physician verification
+      - Live pipeline tracker showing steps with status indicators:
+        [NPI Lookup] -> [License Check] -> [Exclusion Check] -> [Analysis] -> [Result]
+        Each step shows: spinner (in progress), green check (success),
+        red x (failed), yellow warning (degraded), gray dash (skipped)
+      - Results card showing: status badge, confidence score gauge (0-100),
+        source-by-source findings summary, discrepancy list (if any),
+        links to raw data sources
+      - If flagged/escalated: "Needs Review" banner links to Review Queue tab
+    </verify_tab>
+
+    <batch_tab>
+      - Two input modes:
+        a. Text area: paste NPI numbers (one per line, up to 20)
+        b. CSV upload: drag-and-drop or file picker
+      - "Run Batch" button
+      - Progress table: one row per NPI, columns: NPI, Name (populated after NPI lookup),
+        Status (with StatusBadge), Confidence Score, Actions (view detail)
+      - Rows update in real-time via SSE as each physician completes
+      - Sequential processing indicator: "Processing 4 of 10..."
+      - "Export Results" button enabled when batch completes
+    </batch_tab>
+
+    <dashboard_tab>
+      - Top row: four MetricCard components
+        1. Total Verifications (count)
+        2. Avg Cost per Verification (USD)
+        3. Avg Total Latency (ms)
+        4. Overall Failure Rate (%)
+      - Chart row 1:
+        - LatencyChart (Recharts BarChart): latency per source with p50/p95 bars
+        - OutcomeChart (Recharts PieChart): verified / flagged / failed / escalated
+      - Chart row 2:
+        - CostChart (Recharts LineChart): cost per verification over time
+        - RetryChart (Recharts BarChart): retry counts by source
+      - Data refreshes on tab focus or every 10 seconds via SWR
+    </dashboard_tab>
+
+    <review_queue_tab>
+      - List of verifications awaiting human review (from GET /api/hitl/queue)
+      - Each card shows:
+        - Provider name, NPI number
+        - Reason for escalation (bold, prominent)
+        - Collected evidence summary (NPI data, board data if available, LEIE result)
+        - Links section: clickable URLs to NPI Registry search, DCA search page
+        - Action buttons: Approve (green), Reject (red), Request More Info (amber)
+        - Notes text field for reviewer comments
+      - On action: POST to /api/verify/{id}/review, card disappears from queue
+      - Empty state: "No verifications pending review" with green checkmark
+    </review_queue_tab>
+  </ui_layout>
+
+  <!-- ============================================================ -->
+  <!--  DESIGN SYSTEM                                                -->
+  <!-- ============================================================ -->
+
+  <design_system>
+    <color_palette>
+      - Primary: #2563EB (blue-600, trust/medical)
+      - Success: #16A34A (green-600, verified)
+      - Warning: #D97706 (amber-600, flagged/review)
+      - Danger: #DC2626 (red-600, failed/excluded)
+      - Info: #7C3AED (violet-600, escalated/HITL)
+      - Background: #F8FAFC (slate-50)
+      - Surface: #FFFFFF
+      - Text Primary: #1E293B (slate-800)
+      - Text Secondary: #64748B (slate-500)
+      - Border: #E2E8F0 (slate-200)
+    </color_palette>
+
+    <typography>
+      - Font family: Inter, system-ui, sans-serif
+      - Headings: font-semibold
+      - Body: font-normal text-sm leading-relaxed
+      - Monospace (NPI numbers, license numbers): JetBrains Mono, monospace
+    </typography>
+
+    <status_badges>
+      - verified: green bg, checkmark icon, "Verified"
+      - flagged: amber bg, alert-triangle icon, "Flagged"
+      - failed: red bg, x-circle icon, "Failed"
+      - pending/processing: gray bg, spinner icon, "Processing"
+      - escalated: violet bg, user-check icon, "Needs Review"
+      - source_unavailable: gray bg, cloud-off icon, "Source Down"
+    </status_badges>
+  </design_system>
+
+  <!-- ============================================================ -->
+  <!--  KEY INTERACTIONS                                             -->
+  <!-- ============================================================ -->
+
+  <key_interactions>
+    <flow_single_verification>
+      1. User enters NPI number (e.g., "1003127655") on Verify tab
+      2. Clicks "Verify" button
+      3. Pipeline tracker animates step-by-step:
+         a. NPI Lookup: spinner -> green check (shows name, specialty, license #)
+         b. License Check + Exclusion Check: both show spinners (parallel), resolve independently
+         c. Analysis: Claude reasons about findings, spinner -> green check
+         d. Result: status badge appears (Verified/Flagged/Failed)
+      4. If flagged/escalated: "Needs Review" banner with link to Review Queue
+      5. Results card shows full details with links to source data
+    </flow_single_verification>
+
+    <flow_bulk_verification>
+      1. User pastes 10 NPI numbers on Batch tab (or uploads CSV)
+      2. Clicks "Run Batch"
+      3. Table populates with 10 rows, all showing "Queued" status
+      4. Processing indicator: "Processing 1 of 10..."
+      5. First NPI processes through full pipeline, row updates to final status
+      6. 1-second delay, then "Processing 2 of 10..." begins
+      7. Repeat until all 10 complete (sequential processing)
+      8. Dashboard tab now shows updated metrics from this batch
+      9. Any HITL items appear in Review Queue tab
+      10. "Export Results" button becomes active
+    </flow_bulk_verification>
+
+    <flow_hitl_review>
+      1. Reviewer navigates to Review Queue tab
+      2. Sees card for escalated physician:
+         - Reason: "No primary CA license found in NPI record"
+         - Shows NPI data, lists all taxonomies found (e.g., NY and TX only)
+         - Links: "Look up on NPI Registry" (clickable), "Search CA DCA" (clickable)
+      3. Reviewer opens DCA link in new tab, manually searches
+      4. Returns to dashboard, clicks "Approve" with note: "Found under different license type"
+      5. Workflow resumes via LangGraph interrupt, finalize node records decision
+      6. Physician moves from "Escalated" to "Verified" in dashboard
+      7. Card disappears from Review Queue
+    </flow_hitl_review>
+
+    <flow_graceful_degradation>
+      1. NPI "7777777777" starts verification
+      2. NPI lookup succeeds (license B777777 found)
+      3. DCA Playwright fails on CAPTCHA, retries 3 times (2s, 4s, 8s delays)
+      4. After all retries: board_lookup marks source_available["dca"] = False
+      5. LEIE lookup succeeds (no match)
+      6. Discrepancy detection notes missing DCA data, reduces confidence to ~55
+      7. Route decision: flagged with "source_unavailable: dca"
+      8. Dashboard shows yellow "Source Down" indicator for this physician
+      9. Reviewer can manually check DCA and approve/reject
+    </flow_graceful_degradation>
+  </key_interactions>
+
+  <!-- ============================================================ -->
+  <!--  PROJECT STRUCTURE                                            -->
+  <!-- ============================================================ -->
+
+  <project_structure>
+    evercred-poc/
+    ├── README.md
+    ├── .env.example                       # EVERCRED_MOCK_MODE=true
+    ├── data/
+    │   ├── .gitkeep
+    │   ├── UPDATED.csv                    # Real OIG LEIE file (gitignored)
+    │   ├── UPDATED_test.csv               # Synthetic test LEIE data (committed)
+    │   ├── test_physicians.csv            # Sample batch input with 11 test NPIs
+    │   └── evercred.duckdb                # Created by init script (gitignored)
+    ├── backend/
+    │   ├── pyproject.toml
+    │   ├── requirements.txt               # FastAPI, uvicorn, langgraph, httpx, playwright,
+    │   │                                  #   duckdb, claude-agent-sdk, python-dotenv
+    │   ├── .venv/                         # Virtual environment (gitignored)
+    │   ├── main.py                        # FastAPI app entry point, CORS, lifespan
+    │   ├── config.py                      # Env config: EVERCRED_MOCK_MODE, ports, paths
+    │   ├── db.py                          # DuckDB connection (reads existing .duckdb file)
+    │   ├── scripts/
+    │   │   └── init_db.py                 # Standalone: loads LEIE CSV, creates tables
+    │   ├── llm/
+    │   │   └── provider.py                # LLMProvider, MockLLMProvider, LiveLLMProvider
+    │   ├── sources/
+    │   │   ├── npi.py                     # NPI Registry API client (httpx, async, retry)
+    │   │   ├── dca.py                     # CA DCA Playwright scraper + mock + retry
+    │   │   └── leie.py                    # LEIE DuckDB query module
+    │   ├── graph/
+    │   │   ├── state.py                   # VerificationState dataclass
+    │   │   ├── nodes.py                   # LangGraph node functions
+    │   │   ├── workflow.py                # Graph definition, edges, compile
+    │   │   └── hitl.py                    # Human-in-the-loop interrupt handling
+    │   ├── api/
+    │   │   ├── routes.py                  # FastAPI route definitions
+    │   │   └── sse.py                     # Server-Sent Events helpers
+    │   ├── mock/
+    │   │   ├── npi_responses.py           # Dict of mock NPI API responses (11 entries)
+    │   │   ├── dca_responses.py           # Dict of mock DCA results (6 entries)
+    │   │   └── llm_responses.py           # Pattern-matched mock LLM outputs
+    │   └── tests/
+    │       ├── test_npi.py                # NPI client + rule-based parsing tests
+    │       ├── test_dca.py                # DCA scraper + parser tests
+    │       ├── test_leie.py               # LEIE DuckDB query tests
+    │       ├── test_workflow.py            # Full pipeline integration tests (mock mode)
+    │       └── test_retry.py              # Retry/backoff logic tests
+    └── frontend/
+        ├── package.json
+        ├── next.config.js
+        ├── tailwind.config.js
+        ├── postcss.config.js
+        ├── app/
+        │   ├── layout.tsx                 # Root layout with nav tabs
+        │   ├── page.tsx                   # Redirects to /verify
+        │   ├── verify/
+        │   │   └── page.tsx               # Single NPI verification
+        │   ├── batch/
+        │   │   └── page.tsx               # Bulk NPI verification
+        │   ├── dashboard/
+        │   │   └── page.tsx               # Metrics and charts
+        │   └── review/
+        │       └── page.tsx               # HITL review queue
+        ├── components/
+        │   ├── VerifyForm.tsx             # NPI input form
+        │   ├── PipelineTracker.tsx        # Step-by-step status display
+        │   ├── ResultCard.tsx             # Verification result details
+        │   ├── BatchInput.tsx             # NPI text area + CSV upload
+        │   ├── BatchTable.tsx             # Progress table with SSE updates
+        │   ├── HITLCard.tsx               # Single review item card
+        │   ├── MetricCard.tsx             # Single metric display
+        │   ├── LatencyChart.tsx           # Recharts bar chart
+        │   ├── OutcomeChart.tsx           # Recharts pie chart
+        │   ├── CostChart.tsx              # Recharts line chart
+        │   ├── RetryChart.tsx             # Recharts bar chart for retries
+        │   └── StatusBadge.tsx            # Color-coded status indicator
+        ├── hooks/
+        │   ├── useSSE.ts                  # SSE subscription hook
+        │   └── useVerification.ts         # SWR-based verification data hook
+        └── lib/
+            └── api.ts                     # Typed API client (fetch wrapper)
+  </project_structure>
+
+  <!-- ============================================================ -->
+  <!--  IMPLEMENTATION STEPS                                         -->
+  <!-- ============================================================ -->
+
+  <implementation_steps>
+    <step number="1">
+      <title>Project Scaffolding, Data Layer, and Mock Data (Day 1)</title>
+      <tasks>
+        - Initialize Python backend with venv, FastAPI, requirements.txt
+        - Initialize Next.js frontend with Tailwind, Recharts
+        - Write data/UPDATED_test.csv with all test LEIE records
+        - Write backend/scripts/init_db.py (creates DuckDB, loads CSV, creates tables)
+        - Run init script with --test flag to create data/evercred.duckdb
+        - Build LEIE query module (backend/sources/leie.py) with NPI and name+state lookups
+        - Build all mock data files:
+          - backend/mock/npi_responses.py (11 NPI response dicts)
+          - backend/mock/dca_responses.py (6 DCA result dicts including 1 error case)
+          - backend/mock/llm_responses.py (pattern-matched canned outputs)
+        - Write unit tests for LEIE queries against test database
+      </tasks>
+    </step>
+
+    <step number="2">
+      <title>Source Clients and LLM Provider (Day 2)</title>
+      <tasks>
+        - Build NPI Registry client (backend/sources/npi.py):
+          - Async httpx GET with retry/backoff
+          - Rule-based taxonomy parsing (filter by state, find primary, extract license)
+          - Mock mode returns from npi_responses.py dict
+        - Build CA DCA scraper (backend/sources/dca.py):
+          - Playwright automation matching the form fields and selectors
+          - HTML parser for result articles (matching result_html_structure)
+          - Retry with fresh browser context on CAPTCHA failure
+          - Mock mode returns from dca_responses.py dict
+        - Build LLM provider (backend/llm/provider.py):
+          - MockLLMProvider with pattern-matched responses
+          - LiveLLMProvider using claude_agent_sdk, Opus model
+          - Factory function with EVERCRED_MOCK_MODE toggle
+        - Build shared retry utility (retry_with_backoff)
+        - Write unit tests for NPI client, DCA parser, retry logic
+      </tasks>
+    </step>
+
+    <step number="3">
+      <title>LangGraph Workflow and API (Days 3-4)</title>
+      <tasks>
+        - Define VerificationState dataclass (backend/graph/state.py)
+        - Implement graph nodes (backend/graph/nodes.py):
+          npi_lookup, board_lookup, leie_lookup, discrepancy_detection,
+          route_decision, human_review, finalize
+        - Wire graph edges with conditional routing and parallel fan-out
+        - Implement LangGraph interrupt for human_review node
+        - Add latency tracking and token counting in each node
+        - Build FastAPI routes (backend/api/routes.py):
+          POST /api/verify, GET /api/verify/{id}, POST /api/verify/{id}/review
+          POST /api/batch, GET /api/batch/{id}, GET /api/batch/{id}/stream
+          GET /api/metrics, GET /api/hitl/queue
+        - Build SSE streaming for verification and batch progress
+        - Implement sequential batch processing with 1s throttle between NPIs
+        - Integration test: run all 11 test NPIs through pipeline in mock mode
+        - Verify each test NPI produces the expected outcome
+      </tasks>
+    </step>
+
+    <step number="4">
+      <title>Frontend Dashboard (Days 5-6)</title>
+      <tasks>
+        - Build root layout with tab navigation (Verify, Batch, Dashboard, Review Queue)
+        - Build Verify page: VerifyForm, PipelineTracker, ResultCard components
+        - Build Batch page: BatchInput (textarea + CSV upload), BatchTable with SSE
+        - Build Dashboard page: MetricCards, LatencyChart, OutcomeChart, CostChart, RetryChart
+        - Build Review Queue page: HITLCard with approve/reject/request-info actions
+        - Build shared components: StatusBadge, useSSE hook, useVerification hook, api.ts
+        - Wire all API endpoints to frontend
+        - Style with Tailwind using defined color palette
+        - Test full UI flow in mock mode with the 11-NPI test batch
+      </tasks>
+    </step>
+
+    <step number="5">
+      <title>Live Testing, Polish, and Demo Recording (Day 7)</title>
+      <tasks>
+        - Karan takes over for live testing (autonomous agent cannot test live mode):
+          - Switch EVERCRED_MOCK_MODE=false
+          - Test NPI API with real NPI numbers
+          - Test Playwright DCA scraping (assess CAPTCHA behavior)
+          - Test LiveLLMProvider with Opus (verify reasoning quality)
+        - Verify dashboard populates correctly with real data
+        - Record demo walkthrough:
+          a. Single verification of a real CA physician
+          b. Batch of 5-10 real NPIs showing sequential processing
+          c. HITL review flow with manual DCA lookup
+          d. Dashboard metrics after batch completes
+        - Write README: setup instructions, architecture diagram, demo script
+        - Final edge case fixes and UI polish
+      </tasks>
+    </step>
+  </implementation_steps>
+
+  <!-- ============================================================ -->
+  <!--  SUCCESS CRITERIA                                             -->
+  <!-- ============================================================ -->
+
+  <success_criteria>
+    <functionality>
+      - All 11 test NPIs produce correct expected outcomes in mock mode
+      - LEIE exclusion match correctly triggers automatic failure
+      - Missing CA license in NPI correctly triggers HITL escalation
+      - Human review decision correctly resumes workflow via LangGraph interrupt
+      - Batch of 11 NPIs processes sequentially with real-time SSE updates
+      - Retry/backoff fires correctly when DCA source simulates unavailability
+      - Graceful degradation produces flagged result with reduced confidence on source failure
+      - Init script creates DuckDB correctly from both test and real CSVs
+      - Mock mode runs entire system with zero external dependencies
+    </functionality>
+
+    <evercred_alignment>
+      - Demonstrates non-deterministic reasoning (Claude Opus analyzing discrepancies)
+      - Shows multi-source orchestration with parallel execution
+      - Implements human-in-the-loop escalation with clear UX and source links
+      - Provides operational monitoring (cost, latency, failure rates, retries)
+      - Implements retry logic with exponential backoff and graceful degradation
+      - Uses healthcare-specific domain knowledge (NPI taxonomies, license verification)
+      - Maps to Evercred Phase 1 deliverables: pipeline, monitoring, cost projection
+      - State-agnostic data model ready for multi-state expansion
+    </evercred_alignment>
+
+    <demo_readiness>
+      - 3-minute walkthrough demonstrates the complete verification flow
+      - Dashboard shows meaningful data after the 11-NPI test batch
+      - At least one HITL scenario and one graceful degradation scenario play out
+      - Architecture diagram shows how the system scales to 25K+ physician wallets
+    </demo_readiness>
+  </success_criteria>
+
+</project_specification>
