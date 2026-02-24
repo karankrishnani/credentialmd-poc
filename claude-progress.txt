@@ -2,6 +2,73 @@
 
 ## Current Session Progress
 
+### Date: Session 27 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 27 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #5: DCA lookup returns license status for valid license** ✅ PASSING
+   - Entered NPI 1003127655 (ABOSHADY, MOUSTAFA MOATAZ)
+   - All 5 pipeline steps showed green checkmarks
+   - Verification completed: VERIFIED status, 97% confidence
+   - License Status: Current/Active ✅
+   - Expiration Date: 2026-03-31 ✅
+   - License Number: A128437
+   - Step latencies: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 1ms, llm_ms: 111ms
+
+2. **Feature #65: Status badge color matches outcome** ✅ PASSING
+   - Verified (green): NPI 1003127655 - VERIFIED badge displayed
+   - Flagged (amber): NPI 2222222222 - FLAGGED badge with 72% confidence, name mismatch discrepancy
+   - Failed (red): NPI 5555555555 - FAILED badge with 0% confidence, LEIE exclusion
+   - Escalated (purple): NPI 1111111111 - ESCALATED badge with "Human Review Required" banner
+   - All status badges rendered with correct colors per design system
+
+3. **Feature #8: LEIE lookup by NPI identifies excluded physician** ✅ PASSING
+   - Entered NPI 5555555555 (EXCLUDED, DOCTOR E)
+   - All 5 pipeline steps showed green checkmarks
+   - Status: FAILED with 0% confidence ✅
+   - LEIE match: true ✅
+   - Red "OIG LEIE Exclusion Found" warning banner displayed
+   - Discrepancy: "Physician found on OIG LEIE exclusion list"
+   - LEIE exclusion details: "EXCLUDED, DOCTOR excluded on 20200115 under authority 1128a(a)(1) (State: CA)"
+
+#### Additional Verification:
+- Backend API metrics endpoint verified via curl - returns complete JSON response
+- HITL Queue showing 54 verifications pending review
+- Dashboard showing updated metrics:
+  - Total Verifications: 175 (increased by 4 from this session's tests)
+  - Avg Cost: $0.02 per verification
+  - Avg Latency: 203ms total pipeline
+  - Failure Rate: 1.1% overall
+  - Outcome Distribution: Verified 62 (35.4%), Flagged 33 (18.9%), Failed 26 (14.9%), Escalated 54 (30.9%)
+  - Latency by Source: NPI 0ms, DCA 0ms, LEIE 3ms, LLM 200ms
+  - Failure Rates: NPI 0%, DCA 3.4%, LEIE 0%
+- Console errors: 0 (only favicon 404 which is cosmetic)
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: Populated with 175 verification records
+- Console errors: 0
+
+#### Screenshots Captured:
+- regression-session27-verified-result.png - Clean verification with green pipeline
+- regression-session27-flagged-result.png - Flagged verification with name mismatch
+- regression-session27-leie-failed.png - LEIE excluded verification (FAILED)
+- regression-session27-escalated.png - Escalated verification with Human Review Required banner
+- regression-session27-dashboard.png - Dashboard with updated metrics (175 verifications)
+- regression-session27-hitl-queue.png - HITL Queue showing 54 pending reviews
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 26 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
