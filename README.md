@@ -50,32 +50,25 @@ Mock mode allows the entire pipeline to be tested and demoed without external de
 
 ```mermaid
 graph TD
-    subgraph Frontend ["Frontend (Next.js)"]
-        Verify["Verify Tab"]
-        Batch["Batch Tab"]
-        Dashboard["Dashboard Tab"]
-        HITL["HITL Queue Tab"]
+    subgraph Frontend ["Frontend (Next.js / Recharts)"]
+        Tabs["Verify | Batch | Dashboard | HITL Queue"]
     end
 
     Frontend -->|"SSE / REST"| Backend
 
-    subgraph Backend ["Backend (FastAPI)"]
-        subgraph Workflow ["LangGraph Workflow"]
-            NPI["NPI Lookup"] --> ParallelLookups["Board Lookup<br/>LEIE Lookup"]
-            ParallelLookups -->|"LEIE match or<br/>license revoked"| RouteDecision
-            ParallelLookups -->|"normal path"| Discrepancy["Discrepancy Detection<br/>(Claude)"]
-            Discrepancy --> RouteDecision["Route Decision"]
-            RouteDecision --> HumanReview["Human Review<br/>(LangGraph interrupt)"]
-            RouteDecision --> Finalize["Finalize"]
-            HumanReview --> Finalize
-        end
-
+    subgraph Backend ["Backend (FastAPI / Python)"]
+        Workflow["LangGraph Workflow"]
+        LLM["Claude Opus<br/>(Agent SDK)"]
         NPIClient["NPI Client<br/>(httpx)"]
         DCAClient["DCA Client<br/>(Playwright)"]
         LEIEClient["LEIE Client<br/>(DuckDB)"]
     end
 
-    Backend --> DB[("DuckDB<br/>LEIE exclusions<br/>verification_log")]
+    NPIClient -->|"REST API"| NPI["NPI Registry<br/>(NPPES)"]
+    DCAClient -->|"Web Scraping"| DCA["CA DCA<br/>License Search"]
+    LEIEClient --> DB[("DuckDB")]
+
+    Backend --> DB
 ```
 
 ## Verification Pipeline
