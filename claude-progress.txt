@@ -2,6 +2,82 @@
 
 ## Current Session Progress
 
+### Date: Session 41 (Verification Session)
+
+### Features Status: 112/112 passing (100%)
+
+### Session 41 Summary
+
+This session performed regression testing to verify the project remains in a working state after previous sessions.
+
+#### Regression Tests Performed:
+
+1. **Feature #40: Batch progress table shows real per-physician status** ✅ PASSING
+   - Navigated to Batch tab
+   - Entered 3 NPIs: 1003127655, 2222222222, 5555555555
+   - Clicked Run Batch
+   - Table showed real-time updates:
+     - Initial state: all rows showing "queued" status
+     - Processing indicator: "Processing 1 of 3..."
+     - Final state: "3 / 3 completed" with Export CSV link
+   - Final results:
+     - 1003127655 (ABOSHADY, MOUSTAFA MOATAZ) - verified 97%
+     - 2222222222 (MISMATCH, JENNIFER) - flagged 72% (Name mismatch)
+     - 5555555555 (EXCLUDED, DOCTOR E) - failed 0% (LEIE excluded)
+   - Screenshot: regression-session41-batch-complete.png, regression-session41-batch-table.png
+
+2. **Feature #70: Batch SSE shows per-physician progress** ✅ PASSING
+   - SSE events arrived for each physician during batch processing
+   - Table rows updated independently as events arrived
+   - Progress indicator updated in real-time (1 of 3, 2 of 3, 3 of 3)
+   - Status badges correctly colored (green=verified, amber=flagged, red=failed)
+
+3. **Feature #85: Dashboard updates in real-time during batch** ✅ PASSING
+   - Dashboard showed updated metrics after batch completed:
+     - Total Verifications: 216 (increased from 213)
+     - Avg Cost: $0.02 per verification
+     - Avg Latency: 203ms total pipeline
+     - Failure Rate: 1.1%
+     - Outcome Distribution: Verified 83 (38.4%), Flagged 39 (18.1%), Failed 35 (16.2%), Escalated 59 (27.3%)
+   - Charts rendering correctly (Latency by Source, Outcome Distribution, Cost Over Time, Retry Statistics)
+   - Screenshot: regression-session41-dashboard.png
+
+#### Additional Testing:
+
+4. **Single Verification Flow** ✅ PASSING
+   - Entered NPI 1234567890 (CLEANDOC, JOHN P)
+   - All 5 pipeline steps completed with green checkmarks
+   - Status: VERIFIED with 97% confidence
+   - License: G999999, Current/Active, expires 2027-03-31
+   - Specialty: Family Medicine
+   - Processing Time: npi_ms: 0ms, dca_ms: 0ms, leie_ms: 2ms, llm_ms: 238ms
+   - Screenshot: regression-session41-verified.png, regression-session41-verified-result.png
+
+5. **HITL Queue** ✅ PASSING
+   - 59 verifications pending review
+   - Cards display correctly with provider info, escalation reason, collected evidence
+   - Action buttons (Approve, Reject, Request Info) visible and styled correctly
+   - Screenshot: regression-session41-hitl-queue.png
+
+#### Environment Status:
+- Backend: Running on port 8000 ✅
+- Frontend: Running on port 3000 ✅
+- Mock mode: ENABLED ✅
+- DuckDB: 217 verification records (increased after testing)
+- Console errors: 1 (favicon 404 - cosmetic only)
+
+#### Screenshots Captured:
+- regression-session41-batch-complete.png - Batch results header
+- regression-session41-batch-table.png - Full batch results table
+- regression-session41-dashboard.png - Dashboard with metrics and charts
+- regression-session41-hitl-queue.png - HITL review queue
+- regression-session41-verified.png - Pipeline tracker with all steps complete
+- regression-session41-verified-result.png - Full verification result
+
+---
+
+## Previous Session Progress
+
 ### Date: Session 40 (Verification Session)
 
 ### Features Status: 112/112 passing (100%)
