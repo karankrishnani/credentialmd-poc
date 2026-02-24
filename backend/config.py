@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-
 # Mock Mode - default to True for development/testing
 MOCK_MODE = os.getenv("EVERCRED_MOCK_MODE", "true").lower() == "true"
 

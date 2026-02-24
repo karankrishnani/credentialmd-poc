@@ -12,12 +12,23 @@ Defines the node functions for the verification workflow:
 """
 
 import asyncio
+import re
 import time
 from datetime import datetime
 from typing import Dict, Any
 import json
 
 from graph.state import VerificationState, set_hitl_escalation
+
+
+def _extract_json(text: str) -> str | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if match:
+        return match.group(1).strip()
+    return text
 from sources.npi import lookup_npi
 from sources.dca import lookup_dca_license
 from sources.leie import lookup_leie, is_excluded, format_exclusion_reason
@@ -267,16 +278,20 @@ Remember: Respond with valid JSON only."""
         step_latencies["llm_ms"] = int((time.time() - start_time) * 1000)
         updates["step_latencies"] = step_latencies
 
-        # Parse LLM response
+        # Parse LLM response (try raw first, then extract from markdown code blocks)
+        to_parse = _extract_json(response) or response
         try:
-            parsed = json.loads(response)
+            parsed = json.loads(to_parse)
             discrepancies = list(state.get("discrepancies", []))
             discrepancies.extend(parsed.get("discrepancies", []))
             updates["discrepancies"] = discrepancies
             updates["confidence_score"] = parsed.get("confidence_score", 50)
             updates["confidence_reasoning"] = parsed.get("reasoning", "")
-        except json.JSONDecodeError:
-            # If JSON parsing fails, use defaults
+        except json.JSONDecodeError as e:
+            import logging
+            logging.getLogger("graph.nodes").warning(
+                f"LLM JSON parse failed: {e}. Raw response (first 500 chars): {repr(response[:500]) if response else 'None'}"
+            )
             errors = list(state.get("errors", []))
             errors.append("Failed to parse LLM response as JSON")
             updates["errors"] = errors

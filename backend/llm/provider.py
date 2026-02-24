@@ -93,25 +93,6 @@ class LiveLLMProvider(LLMProvider):
     def __init__(self, model: str = LLM_MODEL):
         self.model = model
         self.total_tokens_used = 0
-        self._client = None
-
-    def _get_client(self):
-        """Lazy initialization of Claude client."""
-        if self._client is None:
-            try:
-                # TODO: Initialize claude_agent_sdk client
-                # from claude_agent_sdk import Client
-                # self._client = Client()
-                raise NotImplementedError(
-                    "LiveLLMProvider requires claude_agent_sdk. "
-                    "Set EVERCRED_MOCK_MODE=true for testing."
-                )
-            except ImportError:
-                raise ImportError(
-                    "claude_agent_sdk not installed. "
-                    "Set EVERCRED_MOCK_MODE=true for testing."
-                )
-        return self._client
 
     async def query(self, prompt: str, system: str = "") -> str:
         """
@@ -124,19 +105,52 @@ class LiveLLMProvider(LLMProvider):
         Returns:
             The LLM's response as a string
         """
-        client = self._get_client()
+        import logging
 
-        # TODO: Implement actual Claude SDK call
-        # response = await client.messages.create(
-        #     model=self.model,
-        #     max_tokens=1024,
-        #     system=system,
-        #     messages=[{"role": "user", "content": prompt}]
-        # )
-        # self.total_tokens_used += response.usage.input_tokens + response.usage.output_tokens
-        # return response.content[0].text
+        from claude_agent_sdk import (
+            query as sdk_query,
+            ClaudeAgentOptions,
+            AssistantMessage,
+            TextBlock,
+            ResultMessage,
+        )
+        from claude_agent_sdk._errors import ProcessError
 
-        raise NotImplementedError("Live LLM provider not yet implemented")
+        def stderr_cb(line: str) -> None:
+            logging.getLogger("llm.provider").warning(f"[Claude CLI stderr] {line}")
+
+        options = ClaudeAgentOptions(
+            system_prompt=system,
+            model=self.model,
+            permission_mode="bypassPermissions",
+            max_turns=1,
+            stderr=stderr_cb,
+        )
+        chunks: list[str] = []
+        try:
+            async for message in sdk_query(prompt=prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            chunks.append(block.text)
+                elif isinstance(message, ResultMessage):
+                    if getattr(message, "is_error", False):
+                        err_msg = getattr(message, "result", None) or "".join(chunks)
+                        logging.getLogger("llm.provider").error(
+                            f"[Claude CLI error] {err_msg}"
+                        )
+        except ProcessError as e:
+            actual = "".join(chunks).strip() if chunks else None
+            if actual:
+                log = logging.getLogger("llm.provider")
+                log.error(f"[Claude CLI exit {e.exit_code}] {actual}")
+                raise RuntimeError(f"Claude CLI failed: {actual}") from e
+            raise
+        response_text = "".join(chunks)
+        input_approx = len(prompt) // 4 + len(system) // 4
+        output_approx = len(response_text) // 4
+        self.total_tokens_used += input_approx + output_approx
+        return response_text
 
     def get_tokens_used(self) -> int:
         """Get total tokens used in this session."""
